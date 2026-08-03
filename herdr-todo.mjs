@@ -389,20 +389,53 @@ function cmdAdapters(args) {
   const sub = args[0];
   const root = adaptersRoot();
   if (!existsSync(root)) return "no adapters/ directory in this checkout";
-  const shown = [];
-  const entries = [
-    { name: "pi", dir: "pi", install: "pi install " + join(root, "pi") },
-    { name: "opencode", dir: "opencode", install: "copy " + join(root, "opencode/todo.md") + " to ~/.config/opencode/commands/todo.md, then opencode plugin " + join(root, "opencode/tui-pkg") + " --global" },
-    { name: "grok", dir: "grok", install: "copy " + join(root, "grok/SKILL.md") + " to ~/.grok/skills/todo/SKILL.md" },
-    { name: "cline", dir: "cline", install: "copy " + join(root, "cline/todo.md") + " to .clinerules/todo.md (project-level)" },
-  ];
-  if (sub === "install" || sub === "list") {
+  const out = [];
+
+  if (sub === "install") {
+    // pi — install the pi package (best-effort).
+    const piDir = join(root, "pi");
+    if (existsSync(piDir)) {
+      const r = run(["pi", "install", piDir], { timeout: 30000 });
+      out.push(`pi: ${r.code === 0 ? "installed" : "install failed (run manually: pi install " + piDir + ")"}`);
+    }
+    // opencode — copy slash command + install tui package.
+    const ocDir = join(homedir(), ".config", "opencode", "commands");
+    mkdirSync(ocDir, { recursive: true });
+    const ocSrc = join(root, "opencode", "todo.md");
+    if (existsSync(ocSrc)) {
+      copyFileSync(ocSrc, join(ocDir, "todo.md"));
+      out.push("opencode: slash command installed to ~/.config/opencode/commands/todo.md");
+      const tui = join(root, "opencode", "tui-pkg");
+      const r = run(["opencode", "plugin", tui, "--global"], { timeout: 30000 });
+      out.push(`opencode: tui plugin ${r.code === 0 ? "installed" : "install failed (run: opencode plugin " + tui + " --global)"}`);
+    }
+    // grok — copy skill.
+    const grokDir = join(homedir(), ".grok", "skills", "todo");
+    mkdirSync(grokDir, { recursive: true });
+    const grokSrc = join(root, "grok", "SKILL.md");
+    if (existsSync(grokSrc)) {
+      copyFileSync(grokSrc, join(grokDir, "SKILL.md"));
+      out.push("grok: skill installed to ~/.grok/skills/todo/SKILL.md");
+    }
+    // cline — project-level rule (point to it).
+    out.push("cline: copy " + join(root, "cline", "todo.md") + " to .clinerules/todo.md (project-level)");
+    return out.join("\n");
+  }
+
+  if (sub === "list") {
+    const entries = [
+      { name: "pi", dir: "pi", install: "pi install " + join(root, "pi") },
+      { name: "opencode", dir: "opencode", install: "copy " + join(root, "opencode/todo.md") + " to ~/.config/opencode/commands/todo.md, then opencode plugin " + join(root, "opencode/tui-pkg") + " --global" },
+      { name: "grok", dir: "grok", install: "copy " + join(root, "grok/SKILL.md") + " to ~/.grok/skills/todo/SKILL.md" },
+      { name: "cline", dir: "cline", install: "copy " + join(root, "cline/todo.md") + " to .clinerules/todo.md (project-level)" },
+    ];
     for (const e of entries) {
       const present = existsSync(join(root, e.dir));
-      shown.push(`${e.name}: ${present ? "ok" : "missing"}  ->  ${e.install}`);
+      out.push(`${e.name}: ${present ? "ok" : "missing"}  ->  ${e.install}`);
     }
-    return shown.join("\n");
+    return out.join("\n");
   }
+
   return "usage: adapters install|list";
 }
 
