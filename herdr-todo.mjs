@@ -28,8 +28,8 @@ const INTERVAL_S = Number(process.env.HERDR_TODO_INTERVAL || 4);
 const TTL_MS = Number(process.env.HERDR_TODO_TTL_MS || 12000);
 const GIT_TIMEOUT_MS = 5000;
 
-const TOKEN_OPEN = '{ token = "$todos_open",  fg = "#89b4fa", bold = true },';
-const TOKEN_ROW = `  [ ${TOKEN_OPEN} ],`;
+const TOKEN_OPEN = '    { token = "$todos_open",   fg = "#89b4fa", bold = true },';
+const TOKEN_ANCHOR = '    "git_status" ],';
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -104,10 +104,11 @@ function countOpenIn(root) {
 // ---- token reporting --------------------------------------------------------
 
 function report(wsId, openVal) {
+  const val = openVal > 0 ? `TODO: ${openVal}` : "";
   run([
     herdrBin(), "workspace", "report-metadata", wsId,
     "--source", SOURCE,
-    "--token", `todos_open=${openVal}`,
+    "--token", `todos_open=${val}`,
     "--ttl-ms", String(TTL_MS),
     "--seq", String(Date.now()),
   ], { timeout: 5000 });
@@ -148,7 +149,7 @@ function poll(dryRun) {
       report(wid, String(count));
     } else {
       console.log(`${wid}\t${label}\t${root}`);
-      console.log(`         open=${count}  ->  todos_open=${count}`);
+      console.log(`         open=${count}  ->  todos_open=${count > 0 ? "TODO: " + count : ""}`);
     }
     n += 1;
   }
@@ -184,19 +185,11 @@ function ensureTodosTokens(text) {
   if (lines.some((l) => l.includes("$todos_open"))) {
     return { text, note: "tokens already present" };
   }
-  // Find the last row-entry line (ends with `],`) inside the `rows = [...]` array,
-  // then insert the new row right after it (before the closing `]`).
-  const block = lines.slice(start, end);
-  let insertAt = -1;
-  for (let i = block.length - 1; i >= 0; i--) {
-    if (block[i].trim().endsWith("],")) {
-      insertAt = start + i + 1;
-      break;
-    }
-  }
-  if (insertAt === -1) return { text, note: "could not find rows array" };
-  const newLines = lines.slice(0, insertAt).concat(TOKEN_ROW, lines.slice(insertAt));
-  return { text: newLines.join("\n"), note: "added todos_open row" };
+  // Insert $todos_open into the branch row, right before the trailing git_status row.
+  const insertAt = lines.findIndex((l, i) => i > start && i < end && l.trim() === TOKEN_ANCHOR);
+  if (insertAt === -1) return { text, note: "could not find git_status row" };
+  const newLines = lines.slice(0, insertAt).concat(TOKEN_OPEN, lines.slice(insertAt));
+  return { text: newLines.join("\n"), note: "added todos_open token" };
 }
 
 function removeTodosTokens(text) {
