@@ -20,6 +20,7 @@ OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
 | **Portable todo file** | `TODOS.md` at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
 | **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
+| **Auto-open a todo pane** | when a workspace has open todos, the poller opens a right-hand pane with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
 | **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane with a **live** `todo list` that refreshes every few seconds |
 | **`/todo` in your agent** | per-agent adapters (pi, OpenCode, Cline, Grok) |
 
@@ -36,6 +37,22 @@ herdr plugin action invoke herdr-todo.setup
 # 3. Create a TODOS.md in a project
 cd <project> && todo init
 ```
+
+## Updating / `todo update`
+
+To update the installed plugin to the latest source — pulls the git checkout,
+rewires the sidebar token + launcher, restarts the poller, reinstalls the
+per-agent adapters, and reloads the Herdr plugin manifest — in one step:
+
+```bash
+todo update                 # via the /todo adapter
+herdr plugin action invoke herdr-todo.update   # from Herdr
+node herdr-todo.mjs update  # directly
+```
+
+Before it can pull, ensure your plugin checkout has no uncommitted changes:
+`git -C <plugin-root> pull` will refuse otherwise. Then commit or stash and
+re-run `update`.
 
 ## The `todo` engine
 
@@ -56,6 +73,14 @@ todo count                   Number of open tasks (for scripts/sidebar)
 which re-renders the todo list every few seconds. Add/complete tasks in
 `TODOS.md` (anywhere — the engine, an agent, or your editor) and the pane
 updates automatically.
+
+### Auto-open (default on)
+
+By default the poller **auto-opens** a todo pane for any workspace that has
+open todos — and closes it again when all of that workspace's todos are done.
+It never duplicates a pane that's already showing the todos, and tracks which
+panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
+`HERDR_TODO_AUTO_OPEN=0` in the keep-alive environment.
 
 ## Format
 
@@ -84,6 +109,7 @@ updates automatically.
 | Command | What it does |
 |---|---|
 | `node herdr-todo.mjs setup` | wire sidebar token + install keep-alive poller (backs up config) |
+| `node herdr-todo.mjs update` | pull latest sources, re-setup, restart poller, reinstall adapters, reload plugin |
 | `node herdr-todo.mjs teardown` | stop poller + remove token (reversible) |
 | `node herdr-todo.mjs status` | show poller state + per-workspace open counts |
 | `node herdr-todo.mjs once` | poll once and report tokens |
@@ -94,7 +120,7 @@ updates automatically.
 
 ```
 herdr-todo/
-├── herdr-plugin.toml        # Herdr plugin manifest (setup/teardown/status/open/adapters)
+├── herdr-plugin.toml        # Herdr plugin manifest (setup/update/teardown/status/open/adapters)
 ├── todo.mjs                 # the engine (CLI + importable module)
 ├── todo                     # shell launcher → node todo.mjs
 ├── todo-watch.mjs           # live-updating todo pane (the `todo open` payload)

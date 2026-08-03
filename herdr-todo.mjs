@@ -21,8 +21,13 @@ const HOME = homedir();
 const CONFIG_DIR = join(HOME, ".config", "herdr");
 const CONFIG = join(CONFIG_DIR, "config.toml");
 const LAUNCHER = join(CONFIG_DIR, "herdr-todo");
+const STATE_FILE = join(CONFIG_DIR, "herdr-todo-state.json");
 const SOURCE = "herdr-todo";
 const PLUGIN_ID = "herdr-todo";
+
+// Auto-open toggle: when set, the poller opens a todo pane for any workspace
+// that has open todos (and closes it again when its todos reach 0).
+const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
 const INTERVAL_S = Number(process.env.HERDR_TODO_INTERVAL || 4);
 const TTL_MS = Number(process.env.HERDR_TODO_TTL_MS || 12000);
@@ -73,6 +78,52 @@ function paneCwds() {
   } catch {
     return {};
   }
+}
+
+// Map of workspace_id -> [pane_id, ...] for every pane currently open.
+function paneIdsByWorkspace() {
+  const r = run([herdrBin(), "pane", "list"]);
+  if (r.code !== 0) return {};
+  try {
+    const data = JSON.parse(r.stdout);
+    const panes = data?.result?.panes || [];
+    const map = {};
+    for (const p of panes) {
+      const wid = p.workspace_id;
+      if (wid && p.pane_id) (map[wid] ||= []).push(p.pane_id);
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// ---- todo-pane state (which pane we opened per workspace) ----------------------
+
+function readState() {
+  try {
+    return JSON.parse(readFileSync(STATE_FILE, "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeState(state) {
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+  } catch {}
+}
+
+// Clean stale entries where the recorded pane no longer exists.
+function pruneState(state, paneIdsByWs) {
+  let changed = false;
+  for (const [wid, pid] of Object.entries(state)) {
+    if (!(paneIdsByWs[wid] || []).includes(pid)) {
+      delete state[wid];
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 function resolveToplevel(cwd) {
@@ -131,6 +182,9 @@ function poll(dryRun) {
     return 1;
   }
   const cwdMap = paneCwds();
+  const paneIdsByWs = paneIdsByWorkspace();
+  const state = readState();
+  pruneState(state, paneIdsByWs);
   let n = 0;
   for (const w of ws) {
     const wid = w.workspace_id;
@@ -147,14 +201,32 @@ function poll(dryRun) {
     }
     if (!dryRun) {
       report(wid, String(count));
+      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, state, paneIdsByWs);
     } else {
       console.log(`${wid}\t${label}\t${root}`);
       console.log(`         open=${count}  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
     }
     n += 1;
   }
+  if (AUTO_OPEN) writeState(state);
   if (dryRun) console.log(`\n${n} workspace(s) with a TODOS.md. No metadata written.`);
   return 0;
+}
+
+// Open a todo pane when a workspace has open todos; close it when it drops to 0.
+// `state` maps workspace_id -> pane_id we opened (persisted across polls).
+function autoOpenTodoPane(wid, root, count, state, paneIdsByWs) {
+  const existing = state[wid];
+  if (count > 0) {
+    // Already showing in a live pane? Skip.
+    if (existing && (paneIdsByWs[wid] || []).includes(existing)) return;
+    const pid = openTodoPane(wid, root);
+    if (pid) state[wid] = pid;
+  } else if (existing) {
+    // No open todos left — close the pane we opened for this workspace.
+    run([herdrBin(), "pane", "close", existing], { timeout: 5000 });
+    delete state[wid];
+  }
 }
 
 // ---- config.toml token wiring --------------------------------------------------
@@ -278,6 +350,11 @@ WantedBy=default.target
   return `keep-alive: unsupported platform ${platform} (run 'loop' manually)`;
 }
 
+function restartKeepAlive() {
+  stopKeepAlive();
+  return installKeepAlive();
+}
+
 function stopKeepAlive() {
   const platform = process.platform;
   if (platform === "darwin") {
@@ -313,6 +390,72 @@ function cmdSetup() {
   return `setup done:\n  ${res.note}\n  launcher: ${LAUNCHER}\n  ${ka}`;
 }
 
+// Update the installed plugin: pull latest sources, rewire config/launcher,
+// restart the poller, reinstall adapters, and reload the Herdr plugin manifest.
+function cmdUpdate() {
+  const out = [];
+  const root = __dirname;
+  const isGit = existsSync(join(root, ".git"));
+
+  // 1. Pull latest sources (if the checkout is a git repo).
+  if (isGit) {
+    out.push("1. pulling latest sources (git pull)");
+    const pull = run(["git", "-C", root, "pull", "--ff-only"], { timeout: 60000 });
+    if (pull.code === 0) {
+      out.push("   git pull: ok");
+    } else {
+      const err = (pull.stderr || pull.stdout).trim();
+      out.push("   git pull: " + (err || "failed"));
+      if (/unstaged changes|local changes|not clean/i.test(err)) {
+        out.push("   hint: commit or stash local changes first, then re-run: herdr-todo update");
+      }
+    }
+  } else {
+    out.push("1. not a git checkout — skipping git pull (plugin root: " + root + ")");
+  }
+
+  // 2. Re-run setup: rewrite config.toml tokens, launcher, keep-alive, report.
+  out.push("2. re-running setup (rewire config + launcher + poller)");
+  const setupRes = cmdSetup();
+  out.push(indentBlock(setupRes, "   "));
+
+  // 3. Restart the poller so it runs the freshly pulled engine.
+  out.push("3. restarting keep-alive poller");
+  out.push("   " + restartKeepAlive());
+
+  // 4. Reinstall per-agent adapters.
+  out.push("4. reinstalling adapters");
+  const adaptersRes = cmdAdapters(["install"]);
+  out.push(indentBlock(adaptersRes, "   "));
+
+  // 5. Reload the Herdr plugin manifest (re-link local plugin).
+  out.push("5. reloading Herdr plugin manifest");
+  const reload = reloadPlugin(root);
+  out.push("   " + reload);
+
+  // 6. Report once so the sidebar populates immediately.
+  poll(false);
+  out.push("6. polled once — sidebar now reflects current state");
+
+  return out.join("\n");
+}
+
+function indentBlock(text, prefix) {
+  return text.split("\n").map((l) => prefix + l).join("\n");
+}
+
+// Best-effort reload of the local plugin manifest by re-linking. Falls back to
+// a no-op if the plugin isn't queryable.
+function reloadPlugin(root) {
+  const list = run([herdrBin(), "plugin", "list", "--plugin", PLUGIN_ID, "--json"], { timeout: 10000 });
+  if (list.code !== 0) return "plugin not queryable (is it installed? run: herdr plugin link " + root + ")";
+  // Re-link the local plugin so the manifest + actions are re-read.
+  const unlink = run([herdrBin(), "plugin", "unlink", PLUGIN_ID], { timeout: 10000 });
+  const link = run([herdrBin(), "plugin", "link", root], { timeout: 10000 });
+  if (link.code !== 0) return "reload failed: " + (link.stderr.trim() || link.stdout.trim() || "could not re-link");
+  return "manifest reloaded (unlink + link " + root + ")";
+}
+
 function cmdTeardown() {
   stopKeepAlive();
   if (existsSync(CONFIG)) {
@@ -344,6 +487,28 @@ function cmdStatus() {
   return lines.join("\n");
 }
 
+// Open a todo pane in a given workspace (split an existing pane there).
+// Returns the new pane id or null on failure.
+function openTodoPane(wsId, dir) {
+  const paneIds = paneIdsByWorkspace()[wsId] || [];
+  // Prefer a shell pane to split; fall back to any pane in the workspace.
+  const target = paneIds[0] || wsId;
+  const split = run([
+    herdrBin(), "pane", "split", target, "--direction", "right",
+    "--cwd", dir, "--no-focus",
+  ]);
+  if (split.code !== 0) return null;
+  let paneId = null;
+  try {
+    paneId = JSON.parse(split.stdout)?.result?.pane?.pane_id;
+  } catch {}
+  if (!paneId) return null;
+  const watch = join(__dirname, "todo-watch.mjs");
+  const runOpts = { timeout: 5000 };
+  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"], runOpts);
+  return paneRun.code === 0 ? paneId : null;
+}
+
 function cmdOpen(args) {
   // Find the current workspace's repo root (fallback: cwd).
   const ws = workspaces();
@@ -357,19 +522,9 @@ function cmdOpen(args) {
     return `no TODOS.md in ${dir} — run: todo init`;
   }
 
-  // Split a right-hand pane in the current pane and list todos there.
-  const split = run([herdrBin(), "pane", "split", "--current", "--direction", "right", "--cwd", dir, "--no-focus"]);
-  if (split.code !== 0) return split.stderr || "failed to split pane";
-  let paneId = null;
-  try {
-    paneId = JSON.parse(split.stdout)?.result?.pane?.pane_id;
-  } catch {}
-  if (!paneId) return split.stdout || "opened pane (could not read id)";
-  const watch = join(__dirname, "todo-watch.mjs");
-  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"]);
-  return paneRun.code === 0
-    ? `opened todo pane ${paneId} (live, refreshes every 4s)`
-    : (paneRun.stderr || `opened pane ${paneId} but could not run todo watch`);
+  const paneId = openTodoPane(focused?.workspace_id, dir);
+  if (!paneId) return "failed to open todo pane";
+  return `opened todo pane ${paneId} (live, refreshes every 4s)`;
 }
 
 // ---- adapters ------------------------------------------------------------------
@@ -439,6 +594,7 @@ const [cmd, ...rest] = process.argv.slice(2);
 function main() {
   switch (cmd) {
     case "setup": console.log(cmdSetup()); break;
+    case "update": console.log(cmdUpdate()); break;
     case "teardown": console.log(cmdTeardown()); break;
     case "status": console.log(cmdStatus()); break;
     case "once": console.log(poll(false)); break;
@@ -461,6 +617,7 @@ function usage() {
 
 Herdr plugin commands:
   setup          wire sidebar token + install keep-alive poller (backs up config)
+  update         pull latest sources, re-setup, restart poller, reinstall adapters, reload plugin
   teardown       stop poller + remove token (reversible)
   status         show poller state + per-workspace open counts
   once           poll once and report tokens

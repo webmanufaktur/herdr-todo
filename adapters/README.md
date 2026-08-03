@@ -33,3 +33,18 @@ herdr plugin action invoke herdr-todo.setup
 ```
 
 Then install whichever adapter(s) you want.
+
+## Updating
+
+After the plugin source changes, refresh the adapters in one step:
+
+```bash
+~/.config/herdr/herdr-todo update        # pull + re-setup + reinstall adapters + reload plugin
+# or, from any agent:
+/todo update
+```
+
+`update` re-pulls the plugin checkout, rewires the launcher/config, restarts the
+poller, reinstalls the global adapters (pi, OpenCode, Grok), and reloads the
+Herdr plugin manifest. Cline's project-level `.clinerules/todo.md` is copied
+per project.

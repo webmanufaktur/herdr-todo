@@ -11,6 +11,11 @@ title = "Set up todo sidebar token + poller (backs up config)"
 command = ["node", "herdr-todo.mjs", "setup"]
 
 [[actions]]
+id = "update"
+title = "Update herdr-todo: pull sources, re-setup, restart poller, reinstall adapters, reload plugin"
+command = ["node", "herdr-todo.mjs", "update"]
+
+[[actions]]
 id = "teardown"
 title = "Stop poller + remove todo token (reversible)"
 command = ["node", "herdr-todo.mjs", "teardown"]
