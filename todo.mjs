@@ -262,9 +262,16 @@ function cmdInit() {
   if (existsSync(file)) return fail(`${file} already exists`);
   const template = `# TODOS
 
-Todo.txt markup: \`- [ ]\` open, \`- [x]\` done, \`(A)\` priority (A=highest),
-\`+section\`/\`+project\`, \`@context\`, \`due:YYYY-MM-DD\`, \`t:YYYY-MM-DD\` (done date).
-Manage with \`todo\` (this project's engine) — never hand-edit task lines.
+> **Legend — what each prefix means**
+> - \`- [ ]\` → open task &nbsp;·&nbsp; \`- [x]\` → done task
+> - \`(A)\`–\`(Z)\` → priority, \`(A)\` = highest
+> - \`+section\` / \`+project\` → group or project tag
+> - \`@context\` → where/with-what (e.g. \`@server\`, \`@client\`)
+> - \`due:YYYY-MM-DD\` → due date
+> - \`t:YYYY-MM-DD\` → done date (stamped automatically when completed)
+>
+> Example: \`- [ ] (A) Add security headers @server +p0 due:2026-01-15\`
+> Manage with \`todo\` (this project's engine) — never hand-edit task lines.
 
 ## P0 — Do first
 
