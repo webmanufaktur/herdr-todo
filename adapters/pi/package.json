@@ -1,0 +1,14 @@
+{
+  "name": "herdr-todo-pi",
+  "version": "0.1.0",
+  "description": "pi /todo command adapter for herdr-todo (portable TODOS.md with a Herdr sidebar count).",
+  "keywords": ["pi-package", "herdr", "todo"],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

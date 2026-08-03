@@ -1,0 +1,31 @@
+id = "herdr-todo"
+name = "Sidebar Todos"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md), and open a right-hand pane listing todos. Live, per-workspace, via a background poller (launchd on macOS, systemd on Linux)."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "setup"
+title = "Set up todo sidebar token + poller (backs up config)"
+command = ["node", "herdr-todo.mjs", "setup"]
+
+[[actions]]
+id = "teardown"
+title = "Stop poller + remove todo token (reversible)"
+command = ["node", "herdr-todo.mjs", "teardown"]
+
+[[actions]]
+id = "status"
+title = "Show poller state + per-workspace open todo counts"
+command = ["node", "herdr-todo.mjs", "status"]
+
+[[actions]]
+id = "open"
+title = "Open a right-hand pane listing todos"
+command = ["node", "herdr-todo.mjs", "open"]
+
+[[actions]]
+id = "adapters"
+title = "List/install per-agent /todo adapters"
+command = ["node", "herdr-todo.mjs", "adapters"]

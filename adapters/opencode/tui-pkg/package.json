@@ -1,0 +1,7 @@
+{
+  "name": "herdr-todo-tui",
+  "version": "0.1.0",
+  "description": "Herdr todos keybinding + command-palette for OpenCode (<leader>t).",
+  "type": "module",
+  "exports": { "./tui": "./index.js" }
+}
