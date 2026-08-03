@@ -104,7 +104,7 @@ function countOpenIn(root) {
 // ---- token reporting --------------------------------------------------------
 
 function report(wsId, openVal) {
-  const val = openVal > 0 ? `TODO: ${openVal}` : "";
+  const val = openVal > 0 ? `${openVal} todos` : "";
   run([
     herdrBin(), "workspace", "report-metadata", wsId,
     "--source", SOURCE,
@@ -149,7 +149,7 @@ function poll(dryRun) {
       report(wid, String(count));
     } else {
       console.log(`${wid}\t${label}\t${root}`);
-      console.log(`         open=${count}  ->  todos_open=${count > 0 ? "TODO: " + count : ""}`);
+      console.log(`         open=${count}  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
     }
     n += 1;
   }
