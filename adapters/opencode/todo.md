@@ -11,8 +11,8 @@ Run the tick command and show its stdout:
 ```
 
 If `$ARGUMENTS` is empty, use `list`. Valid subcommands: `list`, `status`, `add <body>`,
-`done <id|text>`, `open <text>`, `next`, `init`, `open` (open a right-hand pane listing
-todos), `setup`, `teardown`. Then show the stdout.
+`done <id|text>`, `open <text>`, `next`, `init`, `open` (open a live right-hand pane listing
+ todos), `setup`, `teardown`. Then show the stdout.
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date). Always use the engine — never

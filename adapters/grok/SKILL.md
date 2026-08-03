@@ -35,7 +35,7 @@ If no `<cmd>` is given, use `list`.
 | `open <text>` | Reopen a done task |
 | `next` | Show the top-priority open task |
 | `init` | Create a `TODOS.md` in cwd |
-| `open` | Open a right-hand Herdr pane listing todos |
+| `open` | Open a live right-hand Herdr pane listing todos (updates on changes) |
 
 ## Format
 

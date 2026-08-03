@@ -52,10 +52,10 @@ todo count                   Number of open tasks (for scripts/sidebar)
 
 ## Live todo pane
 
-`todo open` opens a right-hand Herdr pane running `todo-watch.mjs`, which
-re-renders the todo list every few seconds. Add/complete tasks in `TODOS.md`
-(anywhere — the engine, an agent, or your editor) and the pane updates
-automatically.
+`todo open` opens a persistent right-hand Herdr pane running `todo-watch.mjs`,
+which re-renders the todo list every few seconds. Add/complete tasks in
+`TODOS.md` (anywhere — the engine, an agent, or your editor) and the pane
+updates automatically.
 
 ## Format
 
@@ -97,7 +97,9 @@ herdr-todo/
 ├── herdr-plugin.toml        # Herdr plugin manifest (setup/teardown/status/open/adapters)
 ├── todo.mjs                 # the engine (CLI + importable module)
 ├── todo                     # shell launcher → node todo.mjs
+├── todo-watch.mjs           # live-updating todo pane (the `todo open` payload)
 ├── herdr-todo.mjs           # Herdr plugin engine (poller + setup/teardown + adapters)
+├── test.mjs                 # engine test suite
 └── adapters/
     ├── pi/                  # pi package → /todo
     ├── opencode/            # slash command + tui-pkg (ctrl+x t)

@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("todo", {
     description:
       "Portable TODOS.md engine + Herdr sidebar. /todo [list|status|add <body>|done <text>|" +
-      "open <text>|next|init|open-pane]",
+      "open <text>|next|init|open] -> opens a live right-hand pane listing todos",
     handler: async (args, ctx) => {
       const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const sub = parts[0];
