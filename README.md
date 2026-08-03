@@ -20,7 +20,7 @@ OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
 | **Portable todo file** | `TODOS.md` at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
 | **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
-| **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane with `todo list` |
+| **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane with a **live** `todo list` that refreshes every few seconds |
 | **`/todo` in your agent** | per-agent adapters (pi, OpenCode, Cline, Grok) |
 
 ## Quick start
@@ -49,6 +49,13 @@ todo next                    Top-priority open task
 todo init                    Create a TODOS.md in cwd
 todo count                   Number of open tasks (for scripts/sidebar)
 ```
+
+## Live todo pane
+
+`todo open` opens a right-hand Herdr pane running `todo-watch.mjs`, which
+re-renders the todo list every few seconds. Add/complete tasks in `TODOS.md`
+(anywhere — the engine, an agent, or your editor) and the pane updates
+automatically.
 
 ## Format
 

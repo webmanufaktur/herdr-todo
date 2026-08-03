@@ -365,11 +365,11 @@ function cmdOpen(args) {
     paneId = JSON.parse(split.stdout)?.result?.pane?.pane_id;
   } catch {}
   if (!paneId) return split.stdout || "opened pane (could not read id)";
-  const engine = join(__dirname, "todo.mjs");
-  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", engine, "list"]);
+  const watch = join(__dirname, "todo-watch.mjs");
+  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"]);
   return paneRun.code === 0
-    ? `opened todo pane ${paneId}`
-    : (paneRun.stderr || `opened pane ${paneId} but could not run todo list`);
+    ? `opened todo pane ${paneId} (live, refreshes every 4s)`
+    : (paneRun.stderr || `opened pane ${paneId} but could not run todo watch`);
 }
 
 // ---- adapters ------------------------------------------------------------------
