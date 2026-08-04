@@ -30,7 +30,6 @@ function parseWatchArgs(argv) {
     else if (a === "--all") out.all = true;
     else if (a === "--plain") out.plain = true;
     else if (a === "--ascii") out.ascii = true;
-    else if (a === "--no-alt-screen") out.noAltScreen = true;
     else if (a === "--file") out.file = argv[++i];
     else if (a === "--color") out.color = argv[++i];
     else if (a === "--density") out.density = argv[++i];
