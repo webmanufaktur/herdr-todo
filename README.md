@@ -128,6 +128,16 @@ correctly refuses them (`agent_pane_busy`) instead of hijacking the live list.
 Add/complete tasks in `TODOS.md` / `TODO.md` (anywhere — the engine, an agent,
 or your editor) and the pane updates automatically.
 
+Render any file, not just the project's todo file — e.g. a template or example:
+
+```bash
+herdr-todo open --file example.md           # pane renders example.md (live)
+herdr-todo open --file /abs/path/example.md # absolute path also works
+node todo-watch.mjs 4 --file example.md     # direct in any shell pane
+```
+
+(`todo-watch.mjs` also honors `$TODOS_FILE`; the footer shows which file is live.)
+
 ### Auto-open (default on)
 
 By default the poller **auto-opens** a todo pane for any workspace that has open
@@ -140,7 +150,9 @@ opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
 
 `TODOS.md` (or `TODO.md`) is a **two-level structure** — `## GROUPNAME` groups, each
 with `### FEATURENAME` feature buckets (any name; `### BACKLOG` is a common one for
-uncategorized ideas) — over GitHub task-list checkboxes + todo.txt metadata tags:
+uncategorized ideas) — over GitHub task-list checkboxes + todo.txt metadata tags.
+A full working demo (3 groups × 2 features × 2 tasks) lives in [`example.md`](example.md)
+and is the canonical template:
 
 ```markdown
 # TODOS

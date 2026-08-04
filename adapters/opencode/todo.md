@@ -19,7 +19,8 @@ If `todo` is not on PATH, fall back to:
 
 If `$ARGUMENTS` is empty, use `list`. Valid subcommands: `list`, `status`, `add <body>`,
 `done <id|text>`, `open <text>` (reopen), `next`, `init`. Bare `open` via
-`herdr-todo open` opens a live right-hand pane on the first tab. Then show the stdout.
+`herdr-todo open` opens a live right-hand pane on the first tab; `open --file
+<path>` renders that file instead (e.g. an example/template). Then show the stdout.
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date, completed tasks only).
