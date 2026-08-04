@@ -3,9 +3,10 @@
 //
 // As a Herdr plugin it mirrors herdr-changed:
 //   - polls each workspace's TODOS.md and reports a `$todos_open` sidebar token
-//   - when an agent is running in a workspace (any Herdr-detected kind) with
-//     open todos, opens a right-hand pane listing todos on the first tab
-//     (plugin split); closes it when the todos hit 0
+//   - when a workspace is active (any agent running — pi, opencode, grok,
+//     cline, … — or simply has panes open) with open todos, opens a right-hand
+//     pane listing todos on the first tab (plugin split); closes it when the
+//     todos hit 0
 //   - `setup`/`teardown` wire the sidebar token + install a keep-alive poller
 //   - `adapters` installs the per-agent /todo adapters (pi/opencode/cline/grok)
 //
@@ -38,11 +39,12 @@ const ENGINE_CMDS = new Set(["list", "status", "add", "done", "next", "init", "c
 // Display title for the live todo list pane.
 const TODO_PANE_TITLE = "todo";
 
-// Auto-open toggle: when set, the poller opens a todo pane for any workspace
-// that has an agent running (**any** Herdr-detected kind — pi, opencode, grok,
-// cline, codex, …) and open todos, and closes it again when the todos reach 0.
-// The pane is driven by Herdr's own agent registry, not by any one agent's
-// extension, so it works regardless of which agent is running.
+// Auto-open toggle: when set, the poller opens a todo pane for any active
+// workspace — one with an agent running (**any** Herdr-detected kind: pi,
+// opencode, grok, cline, codex, …) or simply with panes open (covers manual
+// agent launches Herdr can't yet detect) — that has open todos, and closes
+// it again when the todos reach 0. Driven by Herdr's own workspace/agent
+// registry, not by any one agent's extension.
 const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
 // Poll health: while the Herdr server is unreachable we back off and log at
@@ -261,12 +263,16 @@ function poll(dryRun) {
       continue;
     }
     const hasAgent = agentRunning(w, agentsByWs);
+    // A workspace is "active" when an agent is running there OR it simply has
+    // panes open — the latter covers agents Herdr can't (yet) detect (manual
+    // opencode/grok/cline launches), so the todo pane opens for them too.
+    const active = hasAgent || (paneIdsByWs[wid] || []).length > 0;
     if (!dryRun) {
       report(wid, String(count));
-      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, hasAgent, state, paneIdsByWs);
+      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, active, state, paneIdsByWs);
     } else {
       console.log(`${wid}\t${label}\t${root}`);
-      console.log(`         open=${count}  agent=${hasAgent ? "yes" : "no"}  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
+      console.log(`         open=${count}  active=${active ? "yes" : "no"} (agent=${hasAgent ? "yes" : "no"})  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
     }
     n += 1;
   }
@@ -275,22 +281,25 @@ function poll(dryRun) {
   return 0;
 }
 
-// Drive the todo pane from Herdr's agent lifecycle + open todos:
-//   - open/keep it when an agent is running AND there are open todos;
-//   - close it when the todos reach 0 (regardless of agent);
-//   - never open one for a workspace with no agent running, and don't yank an
-//     already-open pane purely because the agent went idle (it stays until the
-//     work is done). `state` maps workspace_id -> pane_id (persisted across polls).
-function autoOpenTodoPane(wid, root, count, hasAgent, state, paneIdsByWs) {
+// Drive the todo pane from Herdr activity + open todos:
+//   - open/keep it when a workspace is active (an agent is running there, or it
+//     simply has panes open — manual opencode/grok/cline launches count) AND
+//     the project has open todos;
+//   - close it when the todos reach 0 (regardless of activity);
+//   - never open one for an inactive workspace (no panes at all), and don't
+//     yank an already-open pane when the agent merely goes idle (it stays
+//     until the work is done). `state` maps workspace_id -> pane_id (persisted
+//     across polls).
+function autoOpenTodoPane(wid, root, count, active, state, paneIdsByWs) {
   const existing = state[wid];
-  if (!existing && !hasAgent) return; // no agent + no pane => nothing to do
+  if (!existing && !active) return; // inactive + no pane => nothing to do
   if (count === 0 && existing) {
     // No open todos left — close the pane we opened for this workspace.
     closeTodoPane(existing);
     delete state[wid];
     return;
   }
-  if (!hasAgent) return; // agent gone, todos remain: keep, don't open new
+  if (!active) return; // workspace inactive, todos remain: keep, don't open new
   if (count > 0 && existing && (paneIdsByWs[wid] || []).includes(existing)) return;
   const pid = openTodoPane(wid, root);
   if (pid) state[wid] = pid;
@@ -577,12 +586,14 @@ function cmdStatus() {
   const ws = workspaces();
   if (ws) {
     const cwdMap = paneCwds();
+    const paneIdsByWs = paneIdsByWorkspace();
     const agentsByWs = agentsByWorkspace();
     for (const w of ws) {
       const root = gitDirFor(w, cwdMap);
       const count = root ? countOpenIn(root) : null;
       const agent = agentRunning(w, agentsByWs) ? "agent" : "no agent";
-      lines.push(`  ${w.label || w.workspace_id}: ${agent} | ${count === null ? "no TODOS.md/TODO.md" : count + " open"}`);
+      const active = (paneIdsByWs[w.workspace_id] || []).length > 0 ? "active" : "inactive";
+      lines.push(`  ${w.label || w.workspace_id}: ${agent} | ${active} | ${count === null ? "no TODOS.md/TODO.md" : count + " open"}`);
     }
   }
   return lines.join("\n");
