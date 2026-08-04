@@ -27,9 +27,10 @@ OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
 ## Quick start
 
 ```bash
-# 1. Install the Herdr plugin (wires sidebar token + keep-alive poller)
+# 1. Install the Herdr plugin (wires sidebar token + keep-alive poller + PATH `todo`)
 herdr plugin install webmanufaktur/herdr-todo --yes   # or: herdr plugin link ./herdr-todo
 herdr plugin action invoke herdr-todo.setup
+# setup installs ~/.local/bin/todo (engine) — ensure ~/.local/bin is on PATH
 
 # 2. Install the /todo adapters for the agents you use
 ~/.config/herdr/herdr-todo adapters install
@@ -56,30 +57,53 @@ re-run `update`.
 
 ## The `todo` engine
 
+After `setup`, the engine is on PATH as `todo` (`~/.local/bin/todo`). You can
+also call it via the plugin launcher (`~/.config/herdr/herdr-todo <cmd>`), which
+proxies engine commands and owns the plugin-only ones (`open` pane, `setup`, …).
+
 ```
 todo list [--all]            List open tasks (grouped by section)
 todo status                  Open counts per section
 todo add "<text>" [(A)] [+sec] [@ctx] [due:YYYY-MM-DD]
 todo done <id|text>          Mark done (moves to Done + stamps t:)
-todo open <text>             Reopen a done task
+todo open <text>             Reopen a done task (strips t:)
 todo next                    Top-priority open task
 todo init                    Create a TODOS.md in cwd
 todo count                   Number of open tasks (for scripts/sidebar)
 ```
 
+### Hand-edit fallback (only when `todo` is unreachable)
+
+Prefer the engine always. If every launcher fails (PATH missing, plugin not set
+up), you may edit `TODOS.md` by hand — match this markup exactly so the next
+engine run stays consistent:
+
+| Action | Markup |
+|---|---|
+| **Add** | `- [ ] (A) Task text @ctx +section due:YYYY-MM-DD` under a non-Done `##` section |
+| **Complete** | `- [x] … t:YYYY-MM-DD` (today), move under `## Done` |
+| **Reopen** | `- [ ] …` outside Done, **remove** any `t:YYYY-MM-DD` |
+
+Never leave an open checkbox with a `t:` stamp. Restore the engine with
+`herdr plugin action invoke herdr-todo.setup`.
+
 ## Live todo pane
 
-`todo open` opens a persistent right-hand Herdr pane running `todo-watch.mjs`,
-which re-renders the todo list every few seconds. Add/complete tasks in
-`TODOS.md` (anywhere — the engine, an agent, or your editor) and the pane
-updates automatically.
+`herdr-todo open` (or the plugin action / OpenCode `<leader>t`) opens a
+**plugin-owned** right-hand pane running `todo-watch.mjs`, which re-renders the
+todo list every few seconds. Plugin panes are display surfaces managed by Herdr
+— they are not interactive shells, so `herdr agent start` correctly refuses them
+(`agent_pane_busy`) instead of hijacking the live list.
+
+Add/complete tasks in `TODOS.md` (anywhere — the engine, an agent, or your
+editor) and the pane updates automatically.
 
 ### Auto-open (default on)
 
-By default the poller **auto-opens** a todo pane for any workspace that has
-open todos — and closes it again when all of that workspace's todos are done.
-It never duplicates a pane that's already showing the todos, and tracks which
-panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
+By default the poller **auto-opens** a plugin todo pane for any workspace that
+has open todos — and closes it again when all of that workspace's todos are
+done. It never duplicates a pane that's already showing the todos, and tracks
+which panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
 `HERDR_TODO_AUTO_OPEN=0` in the keep-alive environment.
 
 ## Format
@@ -102,18 +126,18 @@ panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
 - `- [ ]` open / `- [x]` done
 - `(A)`..`(Z)` priority, `(A)` highest
 - `+section`/`+project`, `@context`
-- `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date)
+- `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date — completed tasks only; reopen strips it)
 
 ## Herdr plugin commands
 
 | Command | What it does |
 |---|---|
-| `node herdr-todo.mjs setup` | wire sidebar token + install keep-alive poller (backs up config) |
+| `node herdr-todo.mjs setup` | wire sidebar token + install keep-alive poller + `~/.local/bin/todo` (backs up config) |
 | `node herdr-todo.mjs update` | pull latest sources, re-setup, restart poller, reinstall adapters, reload plugin |
 | `node herdr-todo.mjs teardown` | stop poller + remove token (reversible) |
-| `node herdr-todo.mjs status` | show poller state + per-workspace open counts |
+| `node herdr-todo.mjs poller-status` | show poller state + per-workspace open counts |
 | `node herdr-todo.mjs once` | poll once and report tokens |
-| `node herdr-todo.mjs open` | open a right-hand pane listing todos |
+| `node herdr-todo.mjs open` | open a right-hand **plugin** pane listing todos |
 | `node herdr-todo.mjs adapters list\|install` | show/install per-agent `/todo` adapters |
 
 ## Layout

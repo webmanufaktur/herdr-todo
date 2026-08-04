@@ -19,4 +19,8 @@
 
 ## Done
 - [x] move to master branch, we dont use main here t:2026-08-03
-- [ ] this is a test, if the pane for todos opens when there are open todos t:2026-08-03
+- [x] (A) No blessed hand-edit fallback when `todo` isn't reachable — conflicts with "never hand-edit task lines" @docs +p0 t:2026-08-04
+- [x] (B) Open task stamped with `t:` (done-date) — engine counts it open but shows a done stamp (see Backlog evidence) @engine +p1 t:2026-08-04
+- [x] (A) Auto-opened todo pane (wN:p6) is display-only — `herdr agent start` on it fails with agent_pane_busy @setup +p0 t:2026-08-04
+- [x] Fix skill conflict: ~/.pi/agent/skills/delegate-models/SKILL.md has YAML error 'Nested mappings are not allowed in compact mappings' at line 2 col 14 +setup t:2026-08-04
+- [x] (A) `todo` command is not on the shell PATH, so agents can't run the engine @setup +p0 t:2026-08-04

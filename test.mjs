@@ -89,6 +89,32 @@ withProject((dir) => {
   check("count returns 2", r.out === "2", r.out);
 });
 
+console.log("done-date (t:) logic");
+withProject((dir) => {
+  run(["init"], dir);
+  run(["add", "(A) Stamp me"], dir);
+  run(["done", "Stamp"], dir);
+  let file = readFileSync(join(dir, "TODOS.md"), "utf8");
+  check("done stamps t:", /\[x\] .* t:\d{4}-\d{2}-\d{2}/.test(file), file);
+
+  const r = run(["open", "Stamp"], dir);
+  check("reopen ok", r.code === 0, r.err + r.out);
+  file = readFileSync(join(dir, "TODOS.md"), "utf8");
+  check("reopen strips t:", /\[ \] .*Stamp me/.test(file) && !/Stamp me.*t:\d{4}/.test(file), file);
+
+  // Stale open+t: (hand-edit / old bug): still counts open, list hides t:
+  writeFileSync(
+    join(dir, "TODOS.md"),
+    `# TODOS\n\n## Backlog\n- [ ] (B) Stale stamp task +p1 t:2026-08-03\n\n## Done\n`,
+    "utf8",
+  );
+  const list = run(["list"], dir);
+  check("open+t: still listed", list.out.includes("Stale stamp task"), list.out);
+  check("open+t: list hides done stamp", !/t:2026-08-03/.test(list.out), list.out);
+  const count = run(["count"], dir);
+  check("open+t: counts as open", count.out === "1", count.out);
+});
+
 console.log("module import");
 {
   const r = spawnSync("node", ["-e", "import('" + ENGINE + "').then(m=>console.log(typeof m.countOpen))"], { encoding: "utf8" });

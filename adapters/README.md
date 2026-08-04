@@ -2,8 +2,9 @@
 
 The Herdr keybinding / sidebar token covers **every** agent — no adapter needed.
 These adapters add a `/todo` slash command (or rule) inside a specific agent. All
-of them call the same engine via the stable launcher
-`~/.config/herdr/herdr-todo` (created by `herdr-todo setup`).
+of them call the same engine via `todo` on PATH (installed by setup into
+`~/.local/bin/todo`), falling back to the stable launcher
+`~/.config/herdr/herdr-todo`.
 
 **Quick onboarding:** `~/.config/herdr/herdr-todo adapters install`
 auto-installs the global adapters (pi, OpenCode, Grok) and prints where to put

@@ -9,21 +9,29 @@
 //
 // The engine itself lives in todo.mjs (imported here for counting).
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, symlinkSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { findTodos, parse, openTasks, DEFAULT_SECTION } from "./todo.mjs";
+import { fileURLToPath } from "node:url";
+import { findTodos, parse, openTasks } from "./todo.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOME = homedir();
 const CONFIG_DIR = join(HOME, ".config", "herdr");
 const CONFIG = join(CONFIG_DIR, "config.toml");
 const LAUNCHER = join(CONFIG_DIR, "herdr-todo");
+const LOCAL_BIN = join(HOME, ".local", "bin");
+const TODO_BIN = join(LOCAL_BIN, "todo");
+const ENGINE = join(__dirname, "todo.mjs");
 const STATE_FILE = join(CONFIG_DIR, "herdr-todo-state.json");
 const SOURCE = "herdr-todo";
 const PLUGIN_ID = "herdr-todo";
+const PANE_ENTRYPOINT = "todos";
+
+// Engine subcommands (todo.mjs). "open" is shared: bare `open` → plugin pane,
+// `open <text>` → reopen a done task via the engine.
+const ENGINE_CMDS = new Set(["list", "status", "add", "done", "next", "init", "count"]);
 
 // Auto-open toggle: when set, the poller opens a todo pane for any workspace
 // that has open todos (and closes it again when its todos reach 0).
@@ -224,7 +232,7 @@ function autoOpenTodoPane(wid, root, count, state, paneIdsByWs) {
     if (pid) state[wid] = pid;
   } else if (existing) {
     // No open todos left — close the pane we opened for this workspace.
-    run([herdrBin(), "pane", "close", existing], { timeout: 5000 });
+    closeTodoPane(existing);
     delete state[wid];
   }
 }
@@ -270,15 +278,45 @@ function removeTodosTokens(text) {
   return { text: filtered.join("\n"), removed: lines.length - filtered.length };
 }
 
-// ---- launcher ----------------------------------------------------------------
+// ---- launcher + PATH install ---------------------------------------------------
+
+function chmodX(path) {
+  try {
+    const p = spawnSync("chmod", ["+x", path]);
+    if (p.status !== 0) console.error("warning: could not chmod " + path);
+  } catch {}
+}
 
 function writeLauncher() {
-  const shebang = `#!/usr/bin/env sh\n# Launcher managed by herdr-todo setup. Points at the installed engine.\nexec node "${__dirname}/herdr-todo.mjs" "$@"\n`;
+  const shebang = `#!/usr/bin/env sh\n# Launcher managed by herdr-todo setup. Points at the plugin + engine proxy.\nexec node "${__dirname}/herdr-todo.mjs" "$@"\n`;
   writeFileSync(LAUNCHER, shebang, "utf8");
-  try {
-    const p = spawnSync("chmod", ["+x", LAUNCHER]);
-    if (p.status !== 0) console.error("warning: could not chmod launcher");
-  } catch {}
+  chmodX(LAUNCHER);
+}
+
+// Install `todo` on the user PATH (~/.local/bin/todo → engine). Agents and
+// shells can then run `todo list|add|done|…` without knowing the plugin root.
+function installTodoOnPath() {
+  mkdirSync(LOCAL_BIN, { recursive: true });
+  const shebang = `#!/usr/bin/env sh\n# Launcher managed by herdr-todo setup. Points at the todo engine.\nexec node "${ENGINE}" "$@"\n`;
+  writeFileSync(TODO_BIN, shebang, "utf8");
+  chmodX(TODO_BIN);
+  const pathEnv = process.env.PATH || "";
+  const onPath = pathEnv.split(":").includes(LOCAL_BIN);
+  return onPath
+    ? `todo on PATH: ${TODO_BIN}`
+    : `todo installed at ${TODO_BIN} (add ${LOCAL_BIN} to PATH so agents can run \`todo\`)`;
+}
+
+// Forward engine commands to todo.mjs (used by adapters that still call the
+// herdr-todo launcher for list/add/done/…).
+function runEngine(args) {
+  const r = spawnSync(process.execPath, [ENGINE, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  process.exit(r.status ?? 1);
 }
 
 // ---- keep-alive (launchd on macOS, systemd on Linux) ----------------------------
@@ -384,10 +422,11 @@ function cmdSetup() {
   const res = ensureTodosTokens(text);
   if (res.text !== text) writeFileSync(CONFIG, res.text, "utf8");
   writeLauncher();
+  const pathNote = installTodoOnPath();
   const ka = installKeepAlive();
   // report once so sidebar populates immediately
   poll(false);
-  return `setup done:\n  ${res.note}\n  launcher: ${LAUNCHER}\n  ${ka}`;
+  return `setup done:\n  ${res.note}\n  launcher: ${LAUNCHER}\n  ${pathNote}\n  ${ka}`;
 }
 
 // Update the installed plugin: pull latest sources, rewire config/launcher,
@@ -472,6 +511,7 @@ function cmdStatus() {
   const lines = [];
   lines.push(`engine: ${__dirname}`);
   lines.push(`launcher: ${LAUNCHER} (${existsSync(LAUNCHER) ? "present" : "MISSING"})`);
+  lines.push(`todo bin: ${TODO_BIN} (${existsSync(TODO_BIN) ? "present" : "MISSING"})`);
   lines.push(`interval: ${INTERVAL_S}s   ttl: ${TTL_MS}ms`);
   const cfg = existsSync(CONFIG) ? readConfig() : "";
   lines.push(`config: tokens ${cfg.includes("$todos_open") ? "present" : "MISSING"} in [ui.sidebar.spaces]`);
@@ -487,12 +527,59 @@ function cmdStatus() {
   return lines.join("\n");
 }
 
-// Open a todo pane in a given workspace (split an existing pane there).
-// Returns the new pane id or null on failure.
+// Open a plugin-owned todo pane (Herdr-managed, not a shell). Returns pane id or null.
+// Using `plugin pane open` keeps the pane out of the agent-start pool: it is a
+// display surface for todo-watch, not an interactive shell.
 function openTodoPane(wsId, dir) {
   const paneIds = paneIdsByWorkspace()[wsId] || [];
-  // Prefer a shell pane to split; fall back to any pane in the workspace.
-  const target = paneIds[0] || wsId;
+  // Prefer a real shell pane to split from (skip any pane we already own).
+  const state = readState();
+  const owned = state[wsId];
+  const target = paneIds.find((id) => id !== owned) || paneIds[0];
+  if (!target) return null;
+
+  const args = [
+    herdrBin(), "plugin", "pane", "open",
+    "--plugin", PLUGIN_ID,
+    "--entrypoint", PANE_ENTRYPOINT,
+    "--placement", "split",
+    "--direction", "right",
+    "--target-pane", target,
+    "--cwd", dir,
+    "--no-focus",
+  ];
+  if (wsId) args.push("--workspace", wsId);
+  const opened = run(args, { timeout: 10000 });
+  if (opened.code !== 0) {
+    // Fallback for older herdr / missing entrypoint: plain shell split + run.
+    return openTodoPaneFallback(target, dir);
+  }
+  let paneId = null;
+  try {
+    const data = JSON.parse(opened.stdout);
+    paneId = data?.result?.pane_id || data?.result?.pane?.pane_id || null;
+  } catch {
+    paneId = null;
+  }
+  if (paneId) markTodoPaneDisplay(paneId);
+  return paneId;
+}
+
+// Mark the live list as a display surface so the UI (and agents) don't treat
+// it as a free shell. `herdr agent start` on it still returns agent_pane_busy
+// by design — the pane is running todo-watch, not an interactive shell.
+function markTodoPaneDisplay(paneId) {
+  run([
+    herdrBin(), "pane", "report-metadata", paneId,
+    "--source", SOURCE,
+    "--title", "todos (live)",
+    "--display-agent", "todos",
+    "--ttl-ms", String(TTL_MS * 10),
+  ], { timeout: 3000 });
+}
+
+// Legacy path: split a shell pane and run todo-watch inside it. Prefer plugin panes.
+function openTodoPaneFallback(target, dir) {
   const split = run([
     herdrBin(), "pane", "split", target, "--direction", "right",
     "--cwd", dir, "--no-focus",
@@ -504,12 +591,26 @@ function openTodoPane(wsId, dir) {
   } catch {}
   if (!paneId) return null;
   const watch = join(__dirname, "todo-watch.mjs");
-  const runOpts = { timeout: 5000 };
-  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"], runOpts);
-  return paneRun.code === 0 ? paneId : null;
+  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"], { timeout: 5000 });
+  if (paneRun.code !== 0) return null;
+  markTodoPaneDisplay(paneId);
+  return paneId;
+}
+
+function closeTodoPane(paneId) {
+  // Prefer plugin-aware close; fall back to plain pane close.
+  const plug = run([herdrBin(), "plugin", "pane", "close", paneId], { timeout: 5000 });
+  if (plug.code === 0) return;
+  run([herdrBin(), "pane", "close", paneId], { timeout: 5000 });
 }
 
 function cmdOpen(args) {
+  // `open <text>` reopens a done task via the engine; bare `open` opens the pane.
+  if (args.length > 0) {
+    runEngine(["open", ...args]);
+    return; // runEngine exits
+  }
+
   // Find the current workspace's repo root (fallback: cwd).
   const ws = workspaces();
   const focused = ws?.find((w) => w.focused) || ws?.[0];
@@ -524,7 +625,13 @@ function cmdOpen(args) {
 
   const paneId = openTodoPane(focused?.workspace_id, dir);
   if (!paneId) return "failed to open todo pane";
-  return `opened todo pane ${paneId} (live, refreshes every 4s)`;
+  // Remember it so auto-open does not duplicate, and auto-close can find it.
+  if (focused?.workspace_id) {
+    const state = readState();
+    state[focused.workspace_id] = paneId;
+    writeState(state);
+  }
+  return `opened todo pane ${paneId} (live plugin pane, refreshes every 4s)`;
 }
 
 // ---- adapters ------------------------------------------------------------------
@@ -592,14 +699,27 @@ function cmdAdapters(args) {
 const [cmd, ...rest] = process.argv.slice(2);
 
 function main() {
+  // Bare invocation → engine list (what agents expect from `todo` / launcher).
+  if (!cmd || ENGINE_CMDS.has(cmd)) {
+    runEngine(cmd ? [cmd, ...rest] : ["list"]);
+    return;
+  }
   switch (cmd) {
     case "setup": console.log(cmdSetup()); break;
     case "update": console.log(cmdUpdate()); break;
     case "teardown": console.log(cmdTeardown()); break;
-    case "status": console.log(cmdStatus()); break;
+    // poller-status: plugin/poller health (engine `status` is open counts)
+    case "poller-status":
+    case "plugin-status":
+      console.log(cmdStatus());
+      break;
     case "once": console.log(poll(false)); break;
     case "loop": runLoop(); break;
-    case "open": console.log(cmdOpen(rest)); break;
+    case "open": {
+      const out = cmdOpen(rest);
+      if (out != null) console.log(out);
+      break;
+    }
     case "adapters": console.log(cmdAdapters(rest)); break;
     default: console.log(usage()); process.exit(cmd ? 2 : 0);
   }
@@ -613,16 +733,26 @@ function runLoop() {
 }
 
 function usage() {
-  return `herdr-todo — Herdr plugin + todo engine
+  return `herdr-todo — Herdr plugin + todo engine proxy
+
+Engine commands (also available as \`todo\` on PATH after setup):
+  list [--all]   List open tasks
+  status         Open counts per section
+  add <body>     Add a task
+  done <id|text> Mark done (moves to Done + stamps t:)
+  open <text>    Reopen a done task
+  next           Top-priority open task
+  init           Create a TODOS.md in cwd
+  count          Number of open tasks
 
 Herdr plugin commands:
-  setup          wire sidebar token + install keep-alive poller (backs up config)
+  setup          wire sidebar token + install keep-alive poller + PATH todo (backs up config)
   update         pull latest sources, re-setup, restart poller, reinstall adapters, reload plugin
   teardown       stop poller + remove token (reversible)
-  status         show poller state + per-workspace open counts
+  poller-status  show poller state + per-workspace open counts
   once           poll once and report tokens
   loop           poll forever (keep-alive entry)
-  open           open a right-hand pane listing todos
+  open           open a live right-hand plugin pane listing todos
 
 Adapter commands:
   adapters list|install    show/install per-agent /todo adapters

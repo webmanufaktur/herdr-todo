@@ -117,8 +117,15 @@ function toOpen(raw) {
 
 function stampDone(raw) {
   const today = new Date().toISOString().slice(0, 10);
-  if (raw.includes("t:")) return raw.replace(/\s+t:\d{4}-\d{2}-\d{2}/, ` t:${today}`);
+  if (/\st:\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.replace(/\s+t:\d{4}-\d{2}-\d{2}/, ` t:${today}`);
+  }
   return raw + ` t:${today}`;
+}
+
+// Remove completion date stamp (used when reopening a done task).
+function stripDoneStamp(raw) {
+  return raw.replace(/\s+t:\d{4}-\d{2}-\d{2}/g, "");
 }
 
 // Insert a task line at the end of the first section whose heading is not
@@ -187,7 +194,11 @@ function cmdList(args) {
 
 function renderTask(t) {
   const prio = t.priority ? `(${t.priority}) ` : "";
-  const tags = t.tags.join(" ");
+  // Open tasks must not display a done-date stamp (stale t: from a bad reopen
+  // or hand-edit). Done tasks keep t: when listed with --all.
+  const tags = t.tags
+    .filter((tag) => !(t.open && /^t:\d{4}-\d{2}-\d{2}$/.test(tag)))
+    .join(" ");
   return `${prio}${t.clean}${tags ? "  " + tags : ""}`;
 }
 
@@ -240,7 +251,9 @@ function cmdOpen(ref) {
   const matches = all.filter((t) => t.clean.toLowerCase().includes(ref.toLowerCase()));
   if (matches.length === 0) return fail(`no done task matching "${ref}"`);
   if (matches.length > 1) return fail(`ambiguous: ${matches.map((t) => t.clean).join(", ")}`);
-  const res = applyChange(text, matches[0], toOpen);
+  // Reopen: clear checkbox AND strip the done-date stamp so open tasks never
+  // carry a stale t:YYYY-MM-DD (todo.txt completion date is done-only).
+  const res = applyChange(text, matches[0], (raw) => stripDoneStamp(toOpen(raw)));
   if (!res.changed) return fail("could not edit task");
   writeFileSync(file, res.text, "utf8");
   return `reopened: ${matches[0].clean}`;

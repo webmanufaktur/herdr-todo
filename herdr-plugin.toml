@@ -23,7 +23,7 @@ command = ["node", "herdr-todo.mjs", "teardown"]
 [[actions]]
 id = "status"
 title = "Show poller state + per-workspace open todo counts"
-command = ["node", "herdr-todo.mjs", "status"]
+command = ["node", "herdr-todo.mjs", "poller-status"]
 
 [[actions]]
 id = "open"
@@ -34,3 +34,11 @@ command = ["node", "herdr-todo.mjs", "open"]
 id = "adapters"
 title = "List/install per-agent /todo adapters"
 command = ["node", "herdr-todo.mjs", "adapters"]
+
+# Plugin-owned live todo list. Managed by Herdr (not a shell pane), so
+# `herdr agent start` correctly refuses it instead of racing a busy shell.
+[[panes]]
+id = "todos"
+title = "Todos"
+placement = "split"
+command = ["node", "todo-watch.mjs", "4"]
