@@ -55,17 +55,28 @@ function findTodos(startDir) {
 }
 
 // ---- parsing ---------------------------------------------------------------
-// Returns { sections: [{title, tasks: [{raw, index, open, priority, tags, clean}]}], doneSection }
+// Returns { sections: [{title, tasks, buckets: [{title, tasks}]}] }
+// Groups are `## HEADING`; `### FEATURENAME` headings inside a group create
+// feature buckets (tasks are also mirrored into the section-level `tasks`
+// list so flat/grouped views and counts stay unchanged).
 
 function parse(text) {
   const sections = [];
-  let current = { title: DEFAULT_SECTION, tasks: [] };
+  let current = { title: DEFAULT_SECTION, tasks: [], buckets: [] };
+  let bucket = null;
   const lines = text.split("\n");
   for (const line of lines) {
     const sec = line.match(/^##\s+(.+)$/);
     if (sec) {
-      current = { title: sec[1].trim(), tasks: [] };
+      current = { title: sec[1].trim(), tasks: [], buckets: [] };
+      bucket = null;
       sections.push(current);
+      continue;
+    }
+    const feat = line.match(/^###\s+(.+)$/);
+    if (feat) {
+      bucket = { title: feat[1].trim(), tasks: [] };
+      current.buckets.push(bucket);
       continue;
     }
     const m = line.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
@@ -75,7 +86,9 @@ function parse(text) {
       const prio = body.match(/^\(([A-Z])\)\s*/);
       const tags = [...body.matchAll(/(?:^|\s)(\+[^\s]+|@[^\s]+|due:[\d-]+|t:[\d-]+)/g)].map((x) => x[1]);
       const clean = tagless(body);
-      current.tasks.push({ raw: line, open, priority: prio ? prio[1] : null, tags, clean });
+      const task = { raw: line, open, priority: prio ? prio[1] : null, tags, clean };
+      current.tasks.push(task);
+      if (bucket) bucket.tasks.push(task);
       continue;
     }
     // ignore non-task lines (headings, blank, prose)

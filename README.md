@@ -83,7 +83,7 @@ List flags: `--all`, `--plain`, `--ascii`, `--color always|auto|never`,
 
 | Mode | When | Look |
 |---|---|---|
-| **styled** | Interactive TTY (default) | Unicode checkboxes, priority colors, section cards, dim tags, due-date urgency |
+| **styled** | Interactive TTY (default) | Unicode checkboxes, priority colors, **bold group headers + one card per `###` feature bucket**, dim tags, due-date urgency |
 | **flat** | Piped / non-TTY | One plain task per line — **byte-stable** for scripts, tests, and adapters |
 | **grouped** | `--plain` | Old `## Section` headers + indented plain lines (no ANSI) |
 
@@ -101,6 +101,8 @@ Other display flags:
 - Priority `(A)` rows are bold; overdue `due:` tokens go red (or get a trailing `!` when color is off)
 
 The live pane (`todo open` / `todo-watch.mjs`) uses the same renderer in-process, draws on the **alternate screen** (clean Ctrl-C restore), refreshes on a timer, and also watches `TODOS.md` for sub-second updates after save.
+
+Two-level files (`## GROUPNAME` → `### FEATURENAME` buckets) render the group name as a bold header line with **one card per feature bucket** beneath it; a group without `###` buckets keeps a single card titled with the group name (old behavior).
 
 ### Hand-edit fallback (only when `todo` is unreachable)
 

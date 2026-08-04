@@ -167,6 +167,9 @@ console.log("display / plain / color");
     box,
   } = await import(UI);
 
+  // Engine parse — for the two-level bucket assertions below.
+  const { parse: parseTodos } = await import(ENGINE);
+
   // --- 10.1 Regression: non-TTY list is flat + byte-stable shape ---
   withProject((dir) => {
     writeFileSync(
@@ -505,6 +508,78 @@ console.log("display / plain / color");
     // glyph ascii
     check("glyph open unicode", glyph("open", { ascii: false }) === "☐");
     check("glyph open ascii", glyph("open", { ascii: true }) === "[ ]");
+  }
+
+  // --- 10.6 Two-level format: ### feature buckets render as cards under a
+  // --- bold group header; groups without buckets keep the single card. ---
+  {
+    const text = `# TODOS
+
+## Anmeldungen & Buchungsflow (ProcessAnmeldungen)
+
+### Bestätigungs-/Storno-Mails
+
+- [ ] DEBUG: when $config->debug is true, alle Mails gehen an debug@webmanufaktur.net !!!
+- [ ] Bestätigungs-Mail an Teilnehmer bei Übergang → \`bestätigt\` (1)
+
+### QA
+
+- [ ] Regressionstest Anmeldung
+- [ ] ProcessAnmeldungen manueller Test-Checklist durchspielen
+
+### BACKLOG
+
+- [ ] (backlog) CSV-Export der Anmeldungen
+
+## Done
+
+- [x] Alte Sache t:2026-01-10
+`;
+    const sections = parseTodos(text);
+    check("parse finds 2 groups", sections.length === 2, JSON.stringify(sections.map((s) => s.title)));
+    check(
+      "group has 3 feature buckets",
+      sections[0].buckets.length === 3 && sections[0].buckets[0].title === "Bestätigungs-/Storno-Mails",
+      JSON.stringify(sections[0].buckets.map((b) => b.title)),
+    );
+    check(
+      "bucket task mirrored into section tasks",
+      sections[0].tasks.length === 5 && sections[0].buckets[0].tasks.length === 2,
+      `flat=${sections[0].tasks.length} bucket=${sections[0].buckets[0].tasks.length}`,
+    );
+    check("Done group has no buckets", sections[1].buckets.length === 0, JSON.stringify(sections[1].buckets));
+
+    const out = renderList(sections, {
+      mode: "styled",
+      color: false,
+      ascii: false,
+      density: "normal",
+      all: true,
+      width: 80,
+    });
+    check(
+      "group header is a plain bold line (not boxed)",
+      out.includes("Anmeldungen & Buchungsflow (ProcessAnmeldungen)") &&
+        !out.includes("┌─ Anmeldungen"),
+      out,
+    );
+    check(
+      "feature buckets render as cards",
+      out.includes("┌─ Bestätigungs-/Storno-Mails") &&
+        out.includes("┌─ QA") &&
+        out.includes("┌─ BACKLOG"),
+      out,
+    );
+    check(
+      "group header precedes its first card",
+      out.indexOf("Anmeldungen") < out.indexOf("┌─ Bestätigungs"),
+      out,
+    );
+    check(
+      "no-bucket group falls back to single card",
+      out.includes("┌─ Done") && out.includes("Alte Sache"),
+      out,
+    );
   }
 }
 

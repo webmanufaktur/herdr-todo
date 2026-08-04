@@ -356,6 +356,12 @@ function withWidthDensity(opts) {
   return o;
 }
 
+function renderGroupHeader(title, opts) {
+  const o = opts || {};
+  const t = String(title || "");
+  return o.color ? c(t, o, 1) : t; // bold
+}
+
 function renderList(sections, opts) {
   const o = withWidthDensity(opts || {});
   const mode = o.mode || "flat";
@@ -364,9 +370,13 @@ function renderList(sections, opts) {
 
   const blocks = [];
   for (const s of sections || []) {
-    const tasks = (s.tasks || []).filter((t) => (all ? true : t.open));
+    const filter = (t) => (all ? true : t.open);
+    const tasks = (s.tasks || []).filter(filter);
     if (tasks.length === 0) continue;
-    blocks.push({ title: s.title, tasks });
+    const buckets = (s.buckets || [])
+      .map((b) => ({ title: b.title, tasks: b.tasks.filter(filter) }))
+      .filter((b) => b.tasks.length > 0);
+    blocks.push({ title: s.title, tasks, buckets });
   }
   if (blocks.length === 0) return "";
 
@@ -400,20 +410,34 @@ function renderList(sections, opts) {
   for (const b of blocks) {
     const bodyLines = b.tasks.map((t) => renderTaskStyled(t, taskOpts));
 
-    let linesForBox;
-    if (density === "relaxed") {
-      // 1-line top/bottom padding + blank between tasks
-      linesForBox = [""];
-      for (let j = 0; j < bodyLines.length; j++) {
-        if (j > 0) linesForBox.push("");
-        linesForBox.push(bodyLines[j]);
+    const card = (title, lines) => {
+      let rows;
+      if (density === "relaxed") {
+        // 1-line top/bottom padding + blank between tasks
+        rows = [""];
+        for (let j = 0; j < lines.length; j++) {
+          if (j > 0) rows.push("");
+          rows.push(lines[j]);
+        }
+        rows.push("");
+      } else {
+        rows = lines;
       }
-      linesForBox.push("");
-    } else {
-      linesForBox = bodyLines;
+      return box(title, rows, w, o);
+    };
+
+    // Buckets cover every task? → two-level: bold group header, then one card
+    // per feature bucket. Otherwise fall back to a single card (old behavior).
+    const covered = b.buckets.reduce((n, bk) => n + bk.tasks.length, 0);
+    if (b.buckets.length === 0 || covered !== b.tasks.length) {
+      parts.push(card(b.title, bodyLines));
+      continue;
     }
 
-    parts.push(box(b.title, linesForBox, w, o));
+    parts.push(renderGroupHeader(b.title, o));
+    for (const bk of b.buckets) {
+      parts.push(card(bk.title, bk.tasks.map((t) => renderTaskStyled(t, taskOpts))));
+    }
   }
 
   return parts.join("\n\n");
@@ -473,6 +497,7 @@ export {
   renderTaskPlain,
   renderTaskStyled,
   renderList,
+  renderGroupHeader,
   renderHeader,
   renderFooter,
   // test-visible helpers:
