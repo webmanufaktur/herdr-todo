@@ -2,12 +2,15 @@
 // todo-watch — live-updating todo list pane (in-process engine + ANSI UI).
 // Usage: node todo-watch.mjs [interval_s] [--all] [--density m] [--color m]
 //                          [--ascii] [--plain] [--no-alt-screen]
+//                          [--file PATH]   (render PATH instead of TODOS.md/TODO.md;
+//                                           also honors $TODOS_FILE)
 //
 // Payload for `todo open` (Herdr right-hand pane on the first tab). Renders via todo-ui.mjs
 // on a timer, with fs.watch for sub-second refresh and alt-screen to avoid
 // scrollback flicker.
 
 import { readFileSync, watch as fsWatch, existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import { findTodos, parse, openTasks } from "./todo.mjs";
 import {
   resolveOptions,
@@ -27,6 +30,7 @@ function parseWatchArgs(argv) {
     else if (a === "--plain") out.plain = true;
     else if (a === "--ascii") out.ascii = true;
     else if (a === "--no-alt-screen") out.noAltScreen = true;
+    else if (a === "--file") out.file = argv[++i];
     else if (a === "--color") out.color = argv[++i];
     else if (a === "--density") out.density = argv[++i];
   }
@@ -37,7 +41,22 @@ const watchArgs = parseWatchArgs(process.argv.slice(2));
 const interval = watchArgs.interval;
 const opts = resolveOptions(process.env, watchArgs, true);
 
-let todosFile = findTodos(process.cwd());
+// Optional explicit file (--file PATH or $TODOS_FILE, e.g. an example.md);
+// otherwise discover TODOS.md/TODO.md walking up from cwd.
+const fileOverride =
+  watchArgs.file || process.env.TODOS_FILE || process.env.TODO_FILE || null;
+
+function findTodosFile() {
+  if (fileOverride) {
+    const p = fileOverride.startsWith("/")
+      ? fileOverride
+      : join(process.cwd(), fileOverride);
+    return existsSync(p) ? p : null;
+  }
+  return findTodos(process.cwd());
+}
+
+let todosFile = findTodosFile();
 let altScreenOn = false;
 let lastGoodFrame = "";
 let watchHandle = null;
@@ -61,16 +80,18 @@ function computeMeta(sections) {
     interval,
     all: !!opts.all,
     doneCount,
+    file: basename(todosFile || fileOverride || "TODOS.md"),
   };
 }
 
 function buildFrame() {
-  todosFile = todosFile || findTodos(process.cwd());
   if (!todosFile || !existsSync(todosFile)) {
-    todosFile = findTodos(process.cwd());
+    todosFile = findTodosFile();
   }
   if (!todosFile) {
-    return "no TODOS.md or TODO.md found\n\n(edit TODOS.md — updates here automatically)";
+    return fileOverride
+      ? `no file found at ${fileOverride} (cwd: ${process.cwd()})`
+      : "no TODOS.md or TODO.md found\n\n(edit TODOS.md — updates here automatically)";
   }
 
   let sections;
@@ -131,7 +152,7 @@ function debouncedDraw() {
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     // File may have been deleted/recreated — re-discover and re-arm watch
-    const next = findTodos(process.cwd());
+    const next = findTodosFile();
     if (next && next !== todosFile) {
       todosFile = next;
       armWatch();

@@ -10,7 +10,7 @@
 // The engine itself lives in todo.mjs (imported here for counting).
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -570,11 +570,14 @@ function firstTabSplitTarget(wsId, ownedPaneId) {
 
 // Open a plugin-owned todo pane (Herdr-managed split on the first tab).
 // Returns pane id or null. Keeps the pane out of the agent-start pool.
-function openTodoPane(wsId, dir) {
+// With `file` (absolute), the pane renders that file instead of the
+// workspace's TODOS.md/TODO.md (passed to the watch script via $TODOS_FILE).
+function openTodoPane(wsId, dir, file) {
   const state = readState();
   const owned = state[wsId];
-  // Already have a live owned pane?
-  if (owned) {
+  // Already have a live owned pane? (Skip the dedup when rendering a specific
+  // file — that pane shows the project's TODOS.md, not the requested file.)
+  if (owned && !file) {
     const ids = paneIdsByWorkspace()[wsId] || [];
     if (ids.includes(owned)) {
       run([herdrBin(), "plugin", "pane", "focus", owned], { timeout: 3000 });
@@ -595,10 +598,11 @@ function openTodoPane(wsId, dir) {
     "--cwd", dir,
     "--no-focus",
   ];
+  if (file) args.push("--env", `TODOS_FILE=${file}`);
   if (wsId) args.push("--workspace", wsId);
   const opened = run(args, { timeout: 10000 });
   if (opened.code !== 0) {
-    return openTodoPaneFallback(target, dir);
+    return openTodoPaneFallback(target, dir, file);
   }
   let paneId = null;
   try {
@@ -626,7 +630,7 @@ function markTodoPaneDisplay(paneId) {
 }
 
 // Legacy path: split a shell pane and run todo-watch inside it.
-function openTodoPaneFallback(target, dir) {
+function openTodoPaneFallback(target, dir, file) {
   const split = run([
     herdrBin(), "pane", "split", target, "--direction", "right",
     "--cwd", dir, "--no-focus",
@@ -638,7 +642,9 @@ function openTodoPaneFallback(target, dir) {
   } catch {}
   if (!paneId) return null;
   const watch = join(__dirname, "todo-watch.mjs");
-  const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"], { timeout: 5000 });
+  const args = [herdrBin(), "pane", "run", paneId, "node", watch, "4"];
+  if (file) args.push("--file", file);
+  const paneRun = run(args, { timeout: 5000 });
   if (paneRun.code !== 0) return null;
   markTodoPaneDisplay(paneId);
   return paneId;
@@ -652,6 +658,13 @@ function closeTodoPane(paneId) {
 
 function cmdOpen(args) {
   // `open <text>` reopens a done task via the engine; bare `open` opens the pane.
+  // `open --file <path>` opens the pane rendering that file (e.g. example.md).
+  let fileTarget = null;
+  if (args[0] === "--file") {
+    fileTarget = args[1] || "";
+    if (!fileTarget) return "usage: open [--file <path>] | open <text>";
+    args = args.slice(2);
+  }
   if (args.length > 0) {
     runEngine(["open", ...args]);
     return; // runEngine exits
@@ -664,12 +677,15 @@ function cmdOpen(args) {
   const root = focused ? gitDirFor(focused, cwdMap) : process.cwd();
   const dir = root || process.cwd();
 
-  // Check there's a TODOS.md/TODO.md to show.
-  if (!todosFileFor(dir)) {
+  let file = null;
+  if (fileTarget) {
+    file = fileTarget.startsWith("/") ? fileTarget : join(dir, fileTarget);
+    if (!existsSync(file)) return `no such file: ${file}`;
+  } else if (!todosFileFor(dir)) {
     return `no TODOS.md or TODO.md in ${dir} — run: todo init`;
   }
 
-  const paneId = openTodoPane(focused?.workspace_id, dir);
+  const paneId = openTodoPane(focused?.workspace_id, dir, file);
   if (!paneId) return "failed to open todo pane";
   // Remember it so auto-open does not duplicate, and auto-close can find it.
   if (focused?.workspace_id) {
@@ -677,7 +693,8 @@ function cmdOpen(args) {
     state[focused.workspace_id] = paneId;
     writeState(state);
   }
-  return `opened todo pane ${paneId} (live split on first tab, refreshes every 4s)`;
+  const label = file ? basename(file) : "todo list";
+  return `opened ${label} pane ${paneId} (live split on first tab, refreshes every 4s)`;
 }
 
 // ---- adapters ------------------------------------------------------------------
@@ -799,6 +816,7 @@ Herdr plugin commands:
   once           poll once and report tokens
   loop           poll forever (keep-alive entry)
   open           open a live right-hand pane listing todos (first tab)
+  open --file    same, but render the given file (e.g. example.md) instead of TODOS.md
 
 Adapter commands:
   adapters list|install    show/install per-agent /todo adapters

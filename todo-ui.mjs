@@ -456,7 +456,8 @@ function renderHeader(meta, opts) {
 function renderFooter(meta, opts) {
   const o = opts || {};
   const m = meta || {};
-  let text = "edit TODOS.md — updates here automatically";
+  const fname = m.file || "TODOS.md";
+  let text = `edit ${fname} — updates here automatically`;
   if (m.all) {
     const n = m.doneCount ?? 0;
     text += `  (showing ${n} done)`;
