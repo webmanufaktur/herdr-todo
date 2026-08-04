@@ -32,6 +32,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { renderList, renderTaskPlain, resolveOptions } from "./todo-ui.mjs";
 
 const FILE_NAME = "TODOS.md";
@@ -295,6 +297,33 @@ function cmdNext() {
   return `(${t.priority ?? "?"}) ${t.clean}  [${t.section}]`;
 }
 
+// `todo pane` opens the live Herdr todo pane. The engine itself is portable
+// (no Herdr knowledge), so delegate to the herdr-todo plugin launcher:
+// installed launcher → `herdr-todo` on PATH → sibling in this checkout.
+function cmdPane(args) {
+  const plugDir = dirname(fileURLToPath(import.meta.url));
+  const launcher = join(homedir(), ".config", "herdr", "herdr-todo");
+  const sibling = join(plugDir, "herdr-todo.mjs");
+  const candidates = [];
+  if (existsSync(launcher)) candidates.push([launcher, "pane", ...args]);
+  candidates.push(["herdr-todo", "pane", ...args]);
+  if (existsSync(sibling)) candidates.push([process.execPath, sibling, "pane", ...args]);
+
+  for (const argv of candidates) {
+    try {
+      const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 20000 });
+      if (r.error) continue; // launcher missing / not executable
+      const out = (r.stdout || "").trim() || (r.stderr || "").trim();
+      return out || `pane: launcher exited ${r.status}`;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return fail(
+    "`todo pane` needs the herdr-todo plugin launcher — run: herdr plugin action invoke herdr-todo.setup",
+  );
+}
+
 // The standard file template: usage instructions + the two-level layout
 // (## GROUPNAME → ### FEATURENAME feature buckets, then ## Done).
 // Every TODO.md / TODOS.md carries this header so the format is self-describing.
@@ -350,6 +379,7 @@ function runCli() {
     case "next": return console.log(cmdNext());
     case "init": return console.log(cmdInit());
     case "count": return console.log(countOpen());
+    case "pane": return console.log(cmdPane(rest));
     default:
       console.log(usage());
       process.exit(cmd ? 2 : 0);
@@ -391,6 +421,8 @@ Usage:
   todo next                    Top-priority open task
   todo init                    Create a TODOS.md in cwd
   todo count                   Number of open tasks (for scripts/sidebar)
+  todo pane [--file PATH]      Open the live todo pane (delegates to the
+                               herdr-todo plugin; --file renders that file)
 
 List flags:
   --all                        Include done tasks

@@ -72,6 +72,8 @@ todo open <text>             Reopen a done task (strips t:)
 todo next                    Top-priority open task
 todo init                    Create a TODOS.md in cwd
 todo count                   Number of open tasks (for scripts/sidebar)
+todo pane [--file PATH]      Open the live todo pane (delegates to the
+                             herdr-todo plugin; --file renders that file)
 ```
 
 List flags: `--all`, `--plain`, `--ascii`, `--color always|auto|never`,
@@ -196,6 +198,7 @@ and is the canonical template:
 | `node herdr-todo.mjs poller-status` | show poller state + per-workspace open counts |
 | `node herdr-todo.mjs once` | poll once and report tokens |
 | `node herdr-todo.mjs open` | open a right-hand **plugin** pane listing todos |
+| `node herdr-todo.mjs pane` | alias for `open` — opens the live todo pane; `pane --file <path>` renders that file |
 | `node herdr-todo.mjs adapters list\|install` | show/install per-agent `/todo` adapters |
 
 ## Layout

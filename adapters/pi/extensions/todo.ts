@@ -21,6 +21,7 @@ const PLUGIN_CMDS = new Set([
   "adapters",
   "poller-status",
   "plugin-status",
+  "pane",
 ]);
 
 function executable(path: string): boolean {
@@ -50,8 +51,7 @@ function resolveBin(args: string[]): string {
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("todo", {
     description:
-      "Portable TODOS.md/TODO.md engine + Herdr sidebar. /todo [list|status|add <body>|done <text>|" +
-      "open <text>|next|init|open] -> opens a live right-hand pane listing todos",
+      "Portable TODOS.md/TODO.md engine + Herdr sidebar. /todo [list|status|add <body>|done <text>|open <text>|next|init|pane] -> pane opens a live right-hand pane listing todos; pane --file <path> renders that file",
     handler: async (args, ctx) => {
       const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const sub = parts[0];

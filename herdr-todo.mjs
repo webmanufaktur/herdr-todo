@@ -697,6 +697,17 @@ function cmdOpen(args) {
   return `opened ${label} pane ${paneId} (live split on first tab, refreshes every 4s)`;
 }
 
+// `pane` — always opens the live todo pane ("--file <path>" renders that file).
+// Unlike bare `open <text>` (engine reopen) this never touches task state.
+function cmdPane(args) {
+  if (args.length > 0 && args[0] === "--file") {
+    if (args.length !== 2 || !args[1]) return "usage: pane [--file <path>]";
+    return cmdOpen(["--file", args[1]]);
+  }
+  if (args.length > 0) return "usage: pane [--file <path>]";
+  return cmdOpen([]);
+}
+
 // ---- adapters ------------------------------------------------------------------
 
 function adaptersRoot() {
@@ -783,6 +794,11 @@ function main() {
       if (out != null) console.log(out);
       break;
     }
+    case "pane": {
+      const out = cmdPane(rest);
+      if (out != null) console.log(out);
+      break;
+    }
     case "adapters": console.log(cmdAdapters(rest)); break;
     default: console.log(usage()); process.exit(cmd ? 2 : 0);
   }
@@ -817,6 +833,7 @@ Herdr plugin commands:
   loop           poll forever (keep-alive entry)
   open           open a live right-hand pane listing todos (first tab)
   open --file    same, but render the given file (e.g. example.md) instead of TODOS.md
+  pane           open the live todo pane (alias for bare open); pane --file <path> renders that file
 
 Adapter commands:
   adapters list|install    show/install per-agent /todo adapters

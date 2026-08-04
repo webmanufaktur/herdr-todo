@@ -14,9 +14,9 @@ todo <cmd>
 ```
 
 `<cmd>`: `list` (default), `status`, `add <body>` (e.g. `add "(A) Fix login @server +p0"`),
-`done <id|text>`, `open <text>` (reopen), `next`, `init` (create TODOS.md).
-Bare `open` via `herdr-todo open` opens a live right-hand pane on the first tab
-(`open --file <path>` renders that file instead). Report stdout and stop.
+`done <id|text>`, `open <text>` (reopen), `next`, `init` (create TODOS.md), `pane`
+(open the live right-hand pane; `pane --file <path>` renders that file).
+Bare `open` via `herdr-todo open` also opens the pane. Report stdout and stop.
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date, completed tasks only).
