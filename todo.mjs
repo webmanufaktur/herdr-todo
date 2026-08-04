@@ -24,6 +24,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
+import { renderList, renderTaskPlain, resolveOptions } from "./todo-ui.mjs";
 
 const FILE_NAME = "TODOS.md";
 // Accepted names, in preference order. `todo init` still writes FILE_NAME.
@@ -179,31 +180,17 @@ function moveToDoneSection(text, raw, changed) {
 function cmdList(args) {
   const file = findTodos(process.cwd());
   if (!file) return fail("no TODOS.md or TODO.md found (walked up from cwd). Run: todo init");
-  const { all, section, project, context } = args;
+  // section/project/context are parsed but not yet applied (filters out of scope)
   const sections = parse(readFileSync(file, "utf8"));
-  const bySection = process.stdout.isTTY;
-  let out = "";
-  for (const s of sections) {
-    const tasks = s.tasks.filter((t) => (all ? true : t.open));
-    if (tasks.length === 0) continue;
-    if (!bySection) {
-      for (const t of tasks) out += renderTask(t) + "\n";
-      continue;
-    }
-    out += `\n## ${s.title}\n`;
-    for (const t of tasks) out += "  " + renderTask(t) + "\n";
-  }
+  const opts = resolveOptions(process.env, args, !!process.stdout.isTTY);
+  opts.width = process.stdout.columns || 80;
+  const out = renderList(sections, opts);
   return out.trim() || "no open todos. 🎉";
 }
 
+// Thin re-export: byte-stable plain path lives in todo-ui.mjs
 function renderTask(t) {
-  const prio = t.priority ? `(${t.priority}) ` : "";
-  // Open tasks must not display a done-date stamp (stale t: from a bad reopen
-  // or hand-edit). Done tasks keep t: when listed with --all.
-  const tags = t.tags
-    .filter((tag) => !(t.open && /^t:\d{4}-\d{2}-\d{2}$/.test(tag)))
-    .join(" ");
-  return `${prio}${t.clean}${tags ? "  " + tags : ""}`;
+  return renderTaskPlain(t);
 }
 
 function cmdStatus() {
@@ -339,9 +326,13 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--all") out.all = true;
+    else if (a === "--plain") out.plain = true;
+    else if (a === "--ascii") out.ascii = true;
     else if (a === "--section") out.section = args[++i];
     else if (a === "--project") out.project = args[++i];
     else if (a === "--context") out.context = args[++i];
+    else if (a === "--color") out.color = args[++i];
+    else if (a === "--density") out.density = args[++i];
   }
   return out;
 }
@@ -350,7 +341,7 @@ function usage() {
   return `todo — portable TODOS.md / TODO.md engine
 
 Usage:
-  todo list [--all]            List open tasks (grouped by section)
+  todo list [flags]            List open tasks (styled in a TTY; flat when piped)
   todo status                  Open counts per section
   todo add "<text>" [(A)] [+sec] [@ctx] [due:YYYY-MM-DD]
   todo done <id|text>          Mark done (moves to [x] + stamps t:)
@@ -358,6 +349,13 @@ Usage:
   todo next                    Top-priority open task
   todo init                    Create a TODOS.md in cwd
   todo count                   Number of open tasks (for scripts/sidebar)
+
+List flags:
+  --all                        Include done tasks
+  --plain                      Old grouped plain text (no ANSI, no glyphs)
+  --ascii                      ASCII glyph fallback ([ ], +, |)
+  --color always|auto|never    Color control (default: auto; honors NO_COLOR / FORCE_COLOR)
+  --density compact|normal|relaxed   Spacing (default: normal; auto-compact under 60 cols)
 
 Looks for TODOS.md or TODO.md walking up from cwd (TODOS.md preferred).
 `;

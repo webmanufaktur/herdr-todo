@@ -5,7 +5,7 @@ Open todos live in `TODOS.md` or `TODO.md` (todo.txt markup) at the project root
 sidebar shows the open count next to the branch. Manage them with the engine —
 do not hand-edit task lines except when the engine is unreachable (see fallback).
 
-When asked to show/track todos, list/add/complete them, or open the todo pane,
+When asked to show/track todos, list/add/complete them, or open the todo tab,
 run (first that works):
 
 ```
@@ -15,7 +15,7 @@ todo <cmd>
 
 `<cmd>`: `list` (default), `status`, `add <body>` (e.g. `add "(A) Fix login @server +p0"`),
 `done <id|text>`, `open <text>` (reopen), `next`, `init` (create TODOS.md).
-Bare `open` via `herdr-todo open` opens a live right-hand plugin pane. Report stdout and stop.
+Bare `open` via `herdr-todo open` opens a live tab labeled `todo`. Report stdout and stop.
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date, completed tasks only).

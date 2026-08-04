@@ -3,7 +3,7 @@
 //
 // As a Herdr plugin it mirrors herdr-changed:
 //   - polls each workspace's TODOS.md and reports a `$todos_open` sidebar token
-//   - `open` opens a right-hand pane listing todos (plugin pane / split)
+//   - `open` opens a tab labeled "todo" listing todos (plugin pane / tab)
 //   - `setup`/`teardown` wire the sidebar token + install a keep-alive poller
 //   - `adapters` installs the per-agent /todo adapters (pi/opencode/cline/grok)
 //
@@ -29,11 +29,14 @@ const SOURCE = "herdr-todo";
 const PLUGIN_ID = "herdr-todo";
 const PANE_ENTRYPOINT = "todos";
 
-// Engine subcommands (todo.mjs). "open" is shared: bare `open` → plugin pane,
+// Engine subcommands (todo.mjs). "open" is shared: bare `open` → todo tab,
 // `open <text>` → reopen a done task via the engine.
 const ENGINE_CMDS = new Set(["list", "status", "add", "done", "next", "init", "count"]);
 
-// Auto-open toggle: when set, the poller opens a todo pane for any workspace
+// Tab label for the live todo list surface.
+const TODO_TAB_LABEL = "todo";
+
+// Auto-open toggle: when set, the poller opens a todo tab for any workspace
 // that has open todos (and closes it again when its todos reach 0).
 const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
@@ -106,7 +109,7 @@ function paneIdsByWorkspace() {
   }
 }
 
-// ---- todo-pane state (which pane we opened per workspace) ----------------------
+// ---- todo-tab state (which pane/tab we opened per workspace) -------------------
 
 function readState() {
   try {
@@ -122,16 +125,30 @@ function writeState(state) {
   } catch {}
 }
 
-// Clean stale entries where the recorded pane no longer exists.
+// Clean stale entries where the recorded pane no longer exists, or no longer
+// lives in a tab labeled "todo".
 function pruneState(state, paneIdsByWs) {
   let changed = false;
   for (const [wid, pid] of Object.entries(state)) {
-    if (!(paneIdsByWs[wid] || []).includes(pid)) {
+    if (!(paneIdsByWs[wid] || []).includes(pid) || !paneIsTodoSurface(pid)) {
       delete state[wid];
       changed = true;
     }
   }
   return changed;
+}
+
+// True when pane still exists inside a tab labeled "todo".
+function paneIsTodoSurface(paneId) {
+  try {
+    const g = run([herdrBin(), "pane", "get", paneId], { timeout: 3000 });
+    const pane = JSON.parse(g.stdout)?.result?.pane;
+    if (!pane?.tab_id) return false;
+    const tab = tabsFor(pane.workspace_id).find((t) => t.tab_id === pane.tab_id);
+    return !!(tab && (tab.label || "").toLowerCase() === TODO_TAB_LABEL);
+  } catch {
+    return false;
+  }
 }
 
 function resolveToplevel(cwd) {
@@ -221,19 +238,56 @@ function poll(dryRun) {
   return 0;
 }
 
-// Open a todo pane when a workspace has open todos; close it when it drops to 0.
+// Open a todo tab when a workspace has open todos; close it when it drops to 0.
 // `state` maps workspace_id -> pane_id we opened (persisted across polls).
 function autoOpenTodoPane(wid, root, count, state, paneIdsByWs) {
   const existing = state[wid];
   if (count > 0) {
-    // Already showing in a live pane? Skip.
-    if (existing && (paneIdsByWs[wid] || []).includes(existing)) return;
-    const pid = openTodoPane(wid, root);
+    // Already showing in a live todo tab? Skip (and refresh state if needed).
+    if (existing && (paneIdsByWs[wid] || []).includes(existing) && paneIsTodoSurface(existing)) return;
+    const tab = findTodoTab(wid);
+    if (tab) {
+      const pid = paneInTab(wid, tab.tab_id);
+      if (pid) state[wid] = pid;
+      return;
+    }
+    const pid = openTodoTab(wid, root);
     if (pid) state[wid] = pid;
   } else if (existing) {
-    // No open todos left — close the pane we opened for this workspace.
-    closeTodoPane(existing);
+    // No open todos left — close the tab we opened for this workspace.
+    closeTodoSurface(existing);
     delete state[wid];
+  }
+}
+
+// List tabs in a workspace (or all). Returns [] on failure.
+function tabsFor(wsId) {
+  const args = [herdrBin(), "tab", "list"];
+  if (wsId) args.push("--workspace", wsId);
+  const r = run(args);
+  if (r.code !== 0) return [];
+  try {
+    return JSON.parse(r.stdout)?.result?.tabs || [];
+  } catch {
+    return [];
+  }
+}
+
+// Find an existing tab labeled "todo" in the workspace.
+function findTodoTab(wsId) {
+  return tabsFor(wsId).find((t) => (t.label || "").toLowerCase() === TODO_TAB_LABEL) || null;
+}
+
+// Resolve the pane that lives inside a given tab (first match).
+function paneInTab(wsId, tabId) {
+  const r = run([herdrBin(), "pane", "list"]);
+  if (r.code !== 0) return null;
+  try {
+    const panes = JSON.parse(r.stdout)?.result?.panes || [];
+    const hit = panes.find((p) => p.workspace_id === wsId && p.tab_id === tabId);
+    return hit?.pane_id || null;
+  } catch {
+    return null;
   }
 }
 
@@ -527,42 +581,54 @@ function cmdStatus() {
   return lines.join("\n");
 }
 
-// Open a plugin-owned todo pane (Herdr-managed, not a shell). Returns pane id or null.
-// Using `plugin pane open` keeps the pane out of the agent-start pool: it is a
-// display surface for todo-watch, not an interactive shell.
-function openTodoPane(wsId, dir) {
-  const paneIds = paneIdsByWorkspace()[wsId] || [];
-  // Prefer a real shell pane to split from (skip any pane we already own).
-  const state = readState();
-  const owned = state[wsId];
-  const target = paneIds.find((id) => id !== owned) || paneIds[0];
-  if (!target) return null;
+// Open a plugin-owned todo tab (Herdr-managed, not a shell). Returns pane id or null.
+// Using `plugin pane open --placement tab` keeps it out of the agent-start pool:
+// it is a display surface for todo-watch, not an interactive shell.
+function openTodoTab(wsId, dir) {
+  // Reuse an existing "todo" tab if present.
+  const existing = findTodoTab(wsId);
+  if (existing) {
+    const paneId = paneInTab(wsId, existing.tab_id);
+    if (paneId) {
+      run([herdrBin(), "plugin", "pane", "focus", paneId], { timeout: 3000 });
+      return paneId;
+    }
+    run([herdrBin(), "tab", "focus", existing.tab_id], { timeout: 3000 });
+    return existing.tab_id;
+  }
 
   const args = [
     herdrBin(), "plugin", "pane", "open",
     "--plugin", PLUGIN_ID,
     "--entrypoint", PANE_ENTRYPOINT,
-    "--placement", "split",
-    "--direction", "right",
-    "--target-pane", target,
+    "--placement", "tab",
     "--cwd", dir,
     "--no-focus",
   ];
   if (wsId) args.push("--workspace", wsId);
   const opened = run(args, { timeout: 10000 });
   if (opened.code !== 0) {
-    // Fallback for older herdr / missing entrypoint: plain shell split + run.
-    return openTodoPaneFallback(target, dir);
+    // Fallback for older herdr / missing entrypoint: plain tab + run.
+    return openTodoTabFallback(wsId, dir);
   }
   let paneId = null;
+  let tabId = null;
   try {
     const data = JSON.parse(opened.stdout);
-    paneId = data?.result?.pane_id || data?.result?.pane?.pane_id || null;
+    const pane = data?.result?.plugin_pane?.pane || data?.result?.pane || data?.result;
+    paneId = pane?.pane_id || data?.result?.pane_id || null;
+    tabId = pane?.tab_id || data?.result?.tab_id || null;
   } catch {
     paneId = null;
   }
+  if (tabId) labelTodoTab(tabId);
   if (paneId) markTodoPaneDisplay(paneId);
   return paneId;
+}
+
+// Ensure the tab is labeled "todo" (plugin pane title alone may not set tab label).
+function labelTodoTab(tabId) {
+  run([herdrBin(), "tab", "rename", tabId, TODO_TAB_LABEL], { timeout: 3000 });
 }
 
 // Mark the live list as a display surface so the UI (and agents) don't treat
@@ -572,24 +638,47 @@ function markTodoPaneDisplay(paneId) {
   run([
     herdrBin(), "pane", "report-metadata", paneId,
     "--source", SOURCE,
-    "--title", "todos (live)",
+    "--title", TODO_TAB_LABEL,
     "--display-agent", "todos",
     "--ttl-ms", String(TTL_MS * 10),
   ], { timeout: 3000 });
 }
 
-// Legacy path: split a shell pane and run todo-watch inside it. Prefer plugin panes.
-function openTodoPaneFallback(target, dir) {
-  const split = run([
-    herdrBin(), "pane", "split", target, "--direction", "right",
-    "--cwd", dir, "--no-focus",
-  ]);
-  if (split.code !== 0) return null;
+// Legacy path: create a tab labeled "todo" and run todo-watch inside it.
+function openTodoTabFallback(wsId, dir) {
+  const args = [
+    herdrBin(), "tab", "create",
+    "--cwd", dir,
+    "--label", TODO_TAB_LABEL,
+    "--no-focus",
+  ];
+  if (wsId) args.push("--workspace", wsId);
+  const created = run(args, { timeout: 10000 });
+  if (created.code !== 0) return null;
   let paneId = null;
+  let tabId = null;
   try {
-    paneId = JSON.parse(split.stdout)?.result?.pane?.pane_id;
+    const data = JSON.parse(created.stdout);
+    tabId = data?.result?.tab?.tab_id || data?.result?.tab_id || null;
+    paneId = data?.result?.root_pane?.pane_id
+      || data?.result?.pane?.pane_id
+      || data?.result?.root_pane_id
+      || null;
   } catch {}
+  if (!paneId && tabId) {
+    // Resolve root pane from tab list / pane list.
+    const panes = paneIdsByWorkspace()[wsId] || [];
+    // Best-effort: last pane is often the new one; prefer matching tab via pane get.
+    for (const id of panes) {
+      const g = run([herdrBin(), "pane", "get", id], { timeout: 3000 });
+      try {
+        const p = JSON.parse(g.stdout)?.result?.pane;
+        if (p?.tab_id === tabId) { paneId = p.pane_id; break; }
+      } catch {}
+    }
+  }
   if (!paneId) return null;
+  if (tabId) labelTodoTab(tabId);
   const watch = join(__dirname, "todo-watch.mjs");
   const paneRun = run([herdrBin(), "pane", "run", paneId, "node", watch, "4"], { timeout: 5000 });
   if (paneRun.code !== 0) return null;
@@ -597,7 +686,20 @@ function openTodoPaneFallback(target, dir) {
   return paneId;
 }
 
-function closeTodoPane(paneId) {
+function closeTodoSurface(paneId) {
+  // Prefer closing the whole todo tab when the pane lives in a "todo" tab.
+  try {
+    const g = run([herdrBin(), "pane", "get", paneId], { timeout: 3000 });
+    const pane = JSON.parse(g.stdout)?.result?.pane;
+    const tabId = pane?.tab_id;
+    if (tabId) {
+      const tab = tabsFor(pane.workspace_id).find((t) => t.tab_id === tabId);
+      if (tab && (tab.label || "").toLowerCase() === TODO_TAB_LABEL) {
+        const closed = run([herdrBin(), "tab", "close", tabId], { timeout: 5000 });
+        if (closed.code === 0) return;
+      }
+    }
+  } catch {}
   // Prefer plugin-aware close; fall back to plain pane close.
   const plug = run([herdrBin(), "plugin", "pane", "close", paneId], { timeout: 5000 });
   if (plug.code === 0) return;
@@ -605,7 +707,7 @@ function closeTodoPane(paneId) {
 }
 
 function cmdOpen(args) {
-  // `open <text>` reopens a done task via the engine; bare `open` opens the pane.
+  // `open <text>` reopens a done task via the engine; bare `open` opens the todo tab.
   if (args.length > 0) {
     runEngine(["open", ...args]);
     return; // runEngine exits
@@ -623,15 +725,15 @@ function cmdOpen(args) {
     return `no TODOS.md or TODO.md in ${dir} — run: todo init`;
   }
 
-  const paneId = openTodoPane(focused?.workspace_id, dir);
-  if (!paneId) return "failed to open todo pane";
+  const paneId = openTodoTab(focused?.workspace_id, dir);
+  if (!paneId) return "failed to open todo tab";
   // Remember it so auto-open does not duplicate, and auto-close can find it.
   if (focused?.workspace_id) {
     const state = readState();
     state[focused.workspace_id] = paneId;
     writeState(state);
   }
-  return `opened todo pane ${paneId} (live plugin pane, refreshes every 4s)`;
+  return `opened todo tab ${paneId} (live, label "${TODO_TAB_LABEL}", refreshes every 4s)`;
 }
 
 // ---- adapters ------------------------------------------------------------------
@@ -752,7 +854,7 @@ Herdr plugin commands:
   poller-status  show poller state + per-workspace open counts
   once           poll once and report tokens
   loop           poll forever (keep-alive entry)
-  open           open a live right-hand plugin pane listing todos
+  open           open a live todo tab (label: todo) listing todos
 
 Adapter commands:
   adapters list|install    show/install per-agent /todo adapters

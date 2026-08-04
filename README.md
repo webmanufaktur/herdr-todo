@@ -2,7 +2,7 @@
 
 Portable todo tracking for coding agents — a `TODOS.md` file (todo.txt markup)
 shared across every agent, a Herdr sidebar count next to your branch, and a
-right-hand pane listing open todos.
+tab labeled `todo` listing open todos.
 
 The file is the interface, not the agent: **any** agent (pi, Claude Code,
 OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
@@ -22,8 +22,8 @@ still creates `TODOS.md`.
 | **Portable todo file** | `TODOS.md` (or `TODO.md`) at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
 | **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
-| **Auto-open a todo pane** | when a workspace has open todos, the poller opens a right-hand pane with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
-| **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane with a **live** `todo list` that refreshes every few seconds |
+| **Auto-open a todo tab** | when a workspace has open todos, the poller opens a tab labeled `todo` with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
+| **Open a todo tab** | `todo open` (or `<leader>t` in OpenCode) → tab labeled `todo` with a **live** `todo list` that refreshes every few seconds |
 | **`/todo` in your agent** | per-agent adapters (pi, OpenCode, Cline, Grok) |
 
 ## Quick start
@@ -64,7 +64,7 @@ also call it via the plugin launcher (`~/.config/herdr/herdr-todo <cmd>`), which
 proxies engine commands and owns the plugin-only ones (`open` pane, `setup`, …).
 
 ```
-todo list [--all]            List open tasks (grouped by section)
+todo list [flags]            List open tasks (styled in a TTY; flat when piped)
 todo status                  Open counts per section
 todo add "<text>" [(A)] [+sec] [@ctx] [due:YYYY-MM-DD]
 todo done <id|text>          Mark done (moves to Done + stamps t:)
@@ -73,6 +73,34 @@ todo next                    Top-priority open task
 todo init                    Create a TODOS.md in cwd
 todo count                   Number of open tasks (for scripts/sidebar)
 ```
+
+List flags: `--all`, `--plain`, `--ascii`, `--color always|auto|never`,
+`--density compact|normal|relaxed`.
+
+### Display
+
+`todo list` picks a render mode automatically:
+
+| Mode | When | Look |
+|---|---|---|
+| **styled** | Interactive TTY (default) | Unicode checkboxes, priority colors, section cards, dim tags, due-date urgency |
+| **flat** | Piped / non-TTY | One plain task per line — **byte-stable** for scripts, tests, and adapters |
+| **grouped** | `--plain` | Old `## Section` headers + indented plain lines (no ANSI) |
+
+Color control (first match wins):
+
+1. `--color always` / `--color never`
+2. `NO_COLOR` (any value → off)
+3. `FORCE_COLOR` (any value → on)
+4. else: on when stdout is a TTY
+
+Other display flags:
+
+- `--ascii` — `[ ]` / `[x]` and ASCII box borders instead of unicode
+- `--density compact|normal|relaxed` — spacing; default `normal`, auto-`compact` when the terminal is under 60 columns (unless you pass `--density` explicitly)
+- Priority `(A)` rows are bold; overdue `due:` tokens go red (or get a trailing `!` when color is off)
+
+The live tab (`todo open` / `todo-watch.mjs`) uses the same renderer in-process, draws on the **alternate screen** (clean Ctrl-C restore), refreshes on a timer, and also watches `TODOS.md` for sub-second updates after save.
 
 ### Hand-edit fallback (only when `todo` is unreachable)
 
@@ -89,24 +117,24 @@ engine run stays consistent:
 Never leave an open checkbox with a `t:` stamp. Restore the engine with
 `herdr plugin action invoke herdr-todo.setup`.
 
-## Live todo pane
+## Live todo tab
 
 `herdr-todo open` (or the plugin action / OpenCode `<leader>t`) opens a
-**plugin-owned** right-hand pane running `todo-watch.mjs`, which re-renders the
-todo list every few seconds. Plugin panes are display surfaces managed by Herdr
-— they are not interactive shells, so `herdr agent start` correctly refuses them
-(`agent_pane_busy`) instead of hijacking the live list.
+**plugin-owned** tab labeled `todo` running `todo-watch.mjs`, which re-renders
+the todo list every few seconds. Plugin panes are display surfaces managed by
+Herdr — they are not interactive shells, so `herdr agent start` correctly refuses
+them (`agent_pane_busy`) instead of hijacking the live list.
 
 Add/complete tasks in `TODOS.md` / `TODO.md` (anywhere — the engine, an agent,
-or your editor) and the pane updates automatically.
+or your editor) and the tab updates automatically.
 
 ### Auto-open (default on)
 
-By default the poller **auto-opens** a plugin todo pane for any workspace that
-has open todos — and closes it again when all of that workspace's todos are
-done. It never duplicates a pane that's already showing the todos, and tracks
-which panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
-`HERDR_TODO_AUTO_OPEN=0` in the keep-alive environment.
+By default the poller **auto-opens** a todo tab for any workspace that has open
+todos — and closes it again when all of that workspace's todos are done. It never
+duplicates a tab already labeled `todo`, and tracks which panes it opened in
+`~/.config/herdr/herdr-todo-state.json`. Disable it with `HERDR_TODO_AUTO_OPEN=0`
+in the keep-alive environment.
 
 ## Format
 
@@ -148,8 +176,9 @@ which panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it wit
 herdr-todo/
 ├── herdr-plugin.toml        # Herdr plugin manifest (setup/update/teardown/status/open/adapters)
 ├── todo.mjs                 # the engine (CLI + importable module)
+├── todo-ui.mjs              # pure ANSI list renderer (zero I/O; used by list + watch)
 ├── todo                     # shell launcher → node todo.mjs
-├── todo-watch.mjs           # live-updating todo pane (the `todo open` payload)
+├── todo-watch.mjs           # live-updating todo tab (the `todo open` payload)
 ├── herdr-todo.mjs           # Herdr plugin engine (poller + setup/teardown + adapters)
 ├── test.mjs                 # engine test suite
 └── adapters/

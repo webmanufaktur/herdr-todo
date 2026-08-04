@@ -22,7 +22,7 @@ the project-level ones (Cline). Use `adapters list` to see status.
 > package via `opencode plugin`). Grok and Cline are instructed via a skill /
 > rules file to run `~/.config/herdr/herdr-todo …` when you ask.
 >
-> `todo open` (or `/todo open` / `<leader>t`) opens a **live** right-hand pane
+> `todo open` (or `/todo open` / `<leader>t`) opens a **live** tab labeled `todo`
 > that lists todos and re-renders on every change to `TODOS.md` / `TODO.md`.
 
 ## Prerequisite
