@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // todo-watch — live-updating todo list pane (in-process engine + ANSI UI).
 // Usage: node todo-watch.mjs [interval_s] [--all] [--density m] [--color m]
-//                          [--ascii] [--plain] [--no-alt-screen]
-//                          [--file PATH]   (render PATH instead of TODOS.md/TODO.md;
-//                                           also honors $TODOS_FILE)
+//                          [--ascii] [--plain] [--file PATH]   (PATH or $TODOS_FILE)
 //
 // Payload for `todo open` (Herdr right-hand pane on the first tab). Renders via todo-ui.mjs
-// on a timer, with fs.watch for sub-second refresh and alt-screen to avoid
-// scrollback flicker.
+// on file changes (fs.watch) with a periodic safety fallback. Renders into the
+// NORMAL screen buffer (no alternate screen), so the pane scrolls naturally via
+// the terminal's own scrollback and never shows buffer garbage while scrolling.
+// Repaints are skipped when the frame is byte-identical, so a quiet pane does
+// not spam scrollback with copies.
 
 import { readFileSync, watch as fsWatch, existsSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -57,7 +58,7 @@ function findTodosFile() {
 }
 
 let todosFile = findTodosFile();
-let altScreenOn = false;
+let cursorHidden = false;
 let lastGoodFrame = "";
 let watchHandle = null;
 let debounceTimer = null;
@@ -110,23 +111,26 @@ function buildFrame() {
   const footer = renderFooter(meta, opts);
   const body = list.trim() || "no open todos. 🎉";
   const frame = header + "\n\n" + body + "\n\n" + footer;
-  lastGoodFrame = frame;
   return frame;
 }
 
 function writeFrame(frame) {
-  if (!altScreenOn && !watchArgs.noAltScreen) {
-    process.stdout.write("\x1b[?1049h"); // enter alt screen
+  if (!cursorHidden) {
     process.stdout.write("\x1b[?25l"); // hide cursor
-    altScreenOn = true;
+    cursorHidden = true;
   }
-  // cursor home + clear from cursor to end (less flicker than full clear)
+  // cursor home + clear from cursor to end (scrollback is preserved)
   process.stdout.write("\x1b[H\x1b[J");
   process.stdout.write(frame);
 }
 
 function draw() {
-  writeFrame(buildFrame());
+  const frame = buildFrame();
+  // Skip repaints when nothing changed — keeps the normal-buffer scrollback
+  // free of duplicate copies while still refreshing on real changes.
+  if (frame === lastGoodFrame) return;
+  lastGoodFrame = frame;
+  writeFrame(frame);
 }
 
 function cleanup() {
@@ -138,10 +142,9 @@ function cleanup() {
       /* ignore */
     }
   }
-  if (altScreenOn) {
+  if (cursorHidden) {
     process.stdout.write("\x1b[?25h"); // show cursor
-    process.stdout.write("\x1b[?1049l"); // leave alt screen
-    altScreenOn = false;
+    cursorHidden = false;
   }
 }
 

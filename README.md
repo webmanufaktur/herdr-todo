@@ -100,7 +100,11 @@ Other display flags:
 - `--density compact|normal|relaxed` — spacing; default `normal`, auto-`compact` when the terminal is under 60 columns (unless you pass `--density` explicitly)
 - Priority `(A)` rows are bold; overdue `due:` tokens go red (or get a trailing `!` when color is off)
 
-The live pane (`todo open` / `todo-watch.mjs`) uses the same renderer in-process, draws on the **alternate screen** (clean Ctrl-C restore), refreshes on a timer, and also watches `TODOS.md` for sub-second updates after save.
+The live pane (`todo open` / `todo-watch.mjs`) uses the same renderer in-process.
+It renders into the **normal screen buffer** — not the alternate screen — so the
+pane scrolls natively in the terminal's scrollback, and repaints only when the
+list actually changes (fs.watch + a periodic no-op check), so a quiet pane does
+not spam scrollback with copies.
 
 Two-level files (`## GROUPNAME` → `### FEATURENAME` buckets) render the group name as a bold header line with **one card per feature bucket** beneath it; a group without `###` buckets keeps a single card titled with the group name (old behavior).
 
