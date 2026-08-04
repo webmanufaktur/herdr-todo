@@ -34,7 +34,7 @@ function executable(path: string): boolean {
 
 function resolveBin(args: string[]): string {
   const sub = args[0] ?? "list";
-  // Bare `open` opens the todo tab; `open <text>` reopens via the engine.
+  // Bare `open` opens the todo pane; `open <text>` reopens via the engine.
   const needsPlugin =
     PLUGIN_CMDS.has(sub) || (sub === "open" && args.length === 1);
 
@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("todo", {
     description:
       "Portable TODOS.md/TODO.md engine + Herdr sidebar. /todo [list|status|add <body>|done <text>|" +
-      "open <text>|next|init|open] -> opens a live tab labeled todo listing todos",
+      "open <text>|next|init|open] -> opens a live right-hand pane listing todos",
     handler: async (args, ctx) => {
       const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const sub = parts[0];

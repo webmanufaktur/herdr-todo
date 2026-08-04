@@ -67,7 +67,7 @@ const HerdrTodoTui = {
       commands: [
         cmd(api, "herdr.todo.list", "Herdr todo: List", "List open todos", "list"),
         cmd(api, "herdr.todo.status", "Herdr todo: Status", "Show open counts per section", "status"),
-        cmd(api, "herdr.todo.openpane", "Herdr todo: Open tab", "Open a live tab labeled todo listing todos", "open"),
+        cmd(api, "herdr.todo.openpane", "Herdr todo: Open pane", "Open a live right-hand pane listing todos", "open"),
         cmd(api, "herdr.todo.next", "Herdr todo: Next", "Show top-priority open todo", "next"),
       ],
       bindings: [

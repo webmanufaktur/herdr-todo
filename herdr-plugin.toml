@@ -2,7 +2,7 @@ id = "herdr-todo"
 name = "Sidebar Todos"
 version = "0.1.0"
 min_herdr_version = "0.7.0"
-description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md or TODO.md), and open a todo tab listing todos. Live, per-workspace, via a background poller (launchd on macOS, systemd on Linux)."
+description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md or TODO.md), and open a right-hand pane listing todos on the first tab. Live, per-workspace, via a background poller (launchd on macOS, systemd on Linux)."
 platforms = ["linux", "macos"]
 
 [[actions]]
@@ -27,7 +27,7 @@ command = ["node", "herdr-todo.mjs", "poller-status"]
 
 [[actions]]
 id = "open"
-title = "Open a todo tab listing todos"
+title = "Open a right-hand pane listing todos"
 command = ["node", "herdr-todo.mjs", "open"]
 
 [[actions]]
@@ -35,11 +35,11 @@ id = "adapters"
 title = "List/install per-agent /todo adapters"
 command = ["node", "herdr-todo.mjs", "adapters"]
 
-# Plugin-owned live todo list in its own tab (label: todo). Managed by Herdr
-# (not a shell pane), so `herdr agent start` correctly refuses it instead of
-# racing a busy shell.
+# Plugin-owned live todo list as a right-hand split on the first tab.
+# Managed by Herdr (not a shell pane), so `herdr agent start` correctly refuses
+# it instead of racing a busy shell.
 [[panes]]
 id = "todos"
 title = "todo"
-placement = "tab"
+placement = "split"
 command = ["node", "todo-watch.mjs", "4"]

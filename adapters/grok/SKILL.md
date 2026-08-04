@@ -39,7 +39,7 @@ If no `<cmd>` is given, use `list`.
 | `open <text>` | Reopen a done task (clears checkbox + strips `t:`) |
 | `next` | Show the top-priority open task |
 | `init` | Create a `TODOS.md` in cwd |
-| `open` (no args, via herdr-todo) | Open a live Herdr tab labeled `todo` listing todos |
+| `open` (no args, via herdr-todo) | Open a live right-hand Herdr pane listing todos (first tab) |
 
 ## Format
 

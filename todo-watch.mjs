@@ -3,7 +3,7 @@
 // Usage: node todo-watch.mjs [interval_s] [--all] [--density m] [--color m]
 //                          [--ascii] [--plain] [--no-alt-screen]
 //
-// Payload for `todo open` (Herdr tab labeled "todo"). Renders via todo-ui.mjs
+// Payload for `todo open` (Herdr right-hand pane on the first tab). Renders via todo-ui.mjs
 // on a timer, with fs.watch for sub-second refresh and alt-screen to avoid
 // scrollback flicker.
 

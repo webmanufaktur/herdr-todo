@@ -14,7 +14,7 @@
 ## P0 — Do first
 
 - [ ] (A) Visual todo list appearance — explore options so the list looks more like a todo app, not a wall of text @ui +display
-- [ ] (B) General pi skill for planning and todos — write plans to .plans/, add tasks + refs to TODO.md/TODOS.md; agents (opencode/grok/etc.) always open in a new tab (not a pane split); todo surface is a tab labeled todo @pi +skill
+- [ ] (B) General pi skill for planning and todos — write plans to .plans/, add tasks + refs to TODO.md/TODOS.md; agents (opencode/grok/etc.) always open in a new tab (not a pane split); live todo list is a right-hand pane on the first tab @pi +skill
 ## P1 — Should do
 
 ## Backlog
