@@ -3,7 +3,9 @@
 //
 // As a Herdr plugin it mirrors herdr-changed:
 //   - polls each workspace's TODOS.md and reports a `$todos_open` sidebar token
-//   - `open` opens a right-hand pane listing todos on the first tab (plugin split)
+//   - when an agent is running in a workspace (any Herdr-detected kind) with
+//     open todos, opens a right-hand pane listing todos on the first tab
+//     (plugin split); closes it when the todos hit 0
 //   - `setup`/`teardown` wire the sidebar token + install a keep-alive poller
 //   - `adapters` installs the per-agent /todo adapters (pi/opencode/cline/grok)
 //
@@ -37,10 +39,19 @@ const ENGINE_CMDS = new Set(["list", "status", "add", "done", "next", "init", "c
 const TODO_PANE_TITLE = "todo";
 
 // Auto-open toggle: when set, the poller opens a todo pane for any workspace
-// that has open todos (and closes it again when its todos reach 0).
+// that has an agent running (**any** Herdr-detected kind — pi, opencode, grok,
+// cline, codex, …) and open todos, and closes it again when the todos reach 0.
+// The pane is driven by Herdr's own agent registry, not by any one agent's
+// extension, so it works regardless of which agent is running.
 const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
+// Poll health: while the Herdr server is unreachable we back off and log at
+// most once per outage, so a long outage never spams the keep-alive log and
+// the poller self-heals the moment the server returns (no pi self-heal needed).
 const INTERVAL_S = Number(process.env.HERDR_TODO_INTERVAL || 4);
+const UNREACHABLE_BACKOFF_S = 30; // poll this often while the server is down
+const UNREACHABLE_THRESHOLD = 3; // consecutive failures before backing off
+let _unreachableStreak = 0;
 const TTL_MS = Number(process.env.HERDR_TODO_TTL_MS || 12000);
 const GIT_TIMEOUT_MS = 5000;
 
@@ -184,16 +195,55 @@ function clearTokens(wsId) {
   ], { timeout: 5000 });
 }
 
+// Which workspace agent_status values mean "an agent is present" (as opposed to
+// "unknown" = no classified agent). Herdr reports these after recognizing an
+// agent in a pane via its per-agent integration hooks or `agent start`.
+const PRESENT_AGENT_STATUS = new Set(["idle", "working", "blocked", "done"]);
+
+// Map workspace_id -> [agent, ...] from `herdr agent list` (Herdr's own registry
+// of recognized agents). This is the authoritative, agent-agnostic source of
+// "an agent is running here" — it covers pi, opencode, grok, cline, codex, …
+function agentsByWorkspace() {
+  const r = run([herdrBin(), "agent", "list"]);
+  if (r.code !== 0) return {};
+  try {
+    const agents = JSON.parse(r.stdout)?.result?.agents || [];
+    const map = {};
+    for (const a of agents) {
+      if (a.workspace_id) (map[a.workspace_id] ||= []).push(a);
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// Does this workspace currently have an agent running? True when Herdr's agent
+// registry lists one here, or the workspace's aggregated agent_status is a
+// known present-state. "unknown" alone does NOT count (it is the no-agent
+// marker and would otherwise re-open panes in empty workspaces).
+function agentRunning(w, agentsByWs) {
+  if ((agentsByWs[w.workspace_id] || []).length > 0) return true;
+  return PRESENT_AGENT_STATUS.has(w.agent_status);
+}
+
 // ---- poll ---------------------------------------------------------------------
 
 function poll(dryRun) {
   const ws = workspaces();
   if (!ws) {
-    console.error("herdr server unreachable");
+    // Throttle: log only the transition in/out of an outage, never every tick.
+    _unreachableStreak += 1;
+    if (_unreachableStreak === 1) console.error("herdr server unreachable");
     return 1;
+  }
+  if (_unreachableStreak > 0) {
+    _unreachableStreak = 0;
+    if (!dryRun) console.error("herdr server reachable again");
   }
   const cwdMap = paneCwds();
   const paneIdsByWs = paneIdsByWorkspace();
+  const agentsByWs = agentsByWorkspace();
   const state = readState();
   pruneState(state, paneIdsByWs);
   let n = 0;
@@ -210,12 +260,13 @@ function poll(dryRun) {
       if (!dryRun) clearTokens(wid);
       continue;
     }
+    const hasAgent = agentRunning(w, agentsByWs);
     if (!dryRun) {
       report(wid, String(count));
-      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, state, paneIdsByWs);
+      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, hasAgent, state, paneIdsByWs);
     } else {
       console.log(`${wid}\t${label}\t${root}`);
-      console.log(`         open=${count}  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
+      console.log(`         open=${count}  agent=${hasAgent ? "yes" : "no"}  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
     }
     n += 1;
   }
@@ -224,20 +275,25 @@ function poll(dryRun) {
   return 0;
 }
 
-// Open a todo pane when a workspace has open todos; close it when it drops to 0.
-// `state` maps workspace_id -> pane_id we opened (persisted across polls).
-function autoOpenTodoPane(wid, root, count, state, paneIdsByWs) {
+// Drive the todo pane from Herdr's agent lifecycle + open todos:
+//   - open/keep it when an agent is running AND there are open todos;
+//   - close it when the todos reach 0 (regardless of agent);
+//   - never open one for a workspace with no agent running, and don't yank an
+//     already-open pane purely because the agent went idle (it stays until the
+//     work is done). `state` maps workspace_id -> pane_id (persisted across polls).
+function autoOpenTodoPane(wid, root, count, hasAgent, state, paneIdsByWs) {
   const existing = state[wid];
-  if (count > 0) {
-    // Already showing in a live pane? Skip.
-    if (existing && (paneIdsByWs[wid] || []).includes(existing)) return;
-    const pid = openTodoPane(wid, root);
-    if (pid) state[wid] = pid;
-  } else if (existing) {
+  if (!existing && !hasAgent) return; // no agent + no pane => nothing to do
+  if (count === 0 && existing) {
     // No open todos left — close the pane we opened for this workspace.
     closeTodoPane(existing);
     delete state[wid];
+    return;
   }
+  if (!hasAgent) return; // agent gone, todos remain: keep, don't open new
+  if (count > 0 && existing && (paneIdsByWs[wid] || []).includes(existing)) return;
+  const pid = openTodoPane(wid, root);
+  if (pid) state[wid] = pid;
 }
 
 // ---- config.toml token wiring --------------------------------------------------
@@ -521,10 +577,12 @@ function cmdStatus() {
   const ws = workspaces();
   if (ws) {
     const cwdMap = paneCwds();
+    const agentsByWs = agentsByWorkspace();
     for (const w of ws) {
       const root = gitDirFor(w, cwdMap);
       const count = root ? countOpenIn(root) : null;
-      lines.push(`  ${w.label || w.workspace_id}: ${count === null ? "no TODOS.md/TODO.md" : count + " open"}`);
+      const agent = agentRunning(w, agentsByWs) ? "agent" : "no agent";
+      lines.push(`  ${w.label || w.workspace_id}: ${agent} | ${count === null ? "no TODOS.md/TODO.md" : count + " open"}`);
     }
   }
   return lines.join("\n");
@@ -763,6 +821,14 @@ function cmdAdapters(args) {
         out.push("planning-todos: mirrored to " + link);
       } catch {}
     }
+    // Herdr agent-detection integrations — let Herdr recognize these agents in
+    // plain shells so the todo pane auto-opens for them too (the plugin reads
+    // `herdr agent list`, which is populated by these hooks / `agent start`).
+    for (const kind of ["pi", "opencode", "grok"]) {
+      const r = run([herdrBin(), "integration", "install", kind], { timeout: 30000 });
+      out.push(`herdr: ${kind} detection ${r.code === 0 ? "integration installed/current" : "install failed (run manually: herdr integration install " + kind + ")"}`);
+    }
+    out.push("herdr: cline has no detection integration hook — start it with `herdr agent start --kind cline` so the todo pane auto-opens");
     // cline — project-level rule (point to it).
     out.push("cline: copy " + join(root, "cline", "todo.md") + " to .clinerules/todo.md (project-level)");
     return out.join("\n");
@@ -823,10 +889,21 @@ function main() {
 }
 
 function runLoop() {
-  // Poll on an interval forever (for the keep-alive).
-  const tick = () => poll(false);
-  tick();
-  setInterval(tick, INTERVAL_S * 1000);
+  // Poll forever (keep-alive entry). While the server is unreachable we back
+  // off to UNREACHABLE_BACKOFF_S; poll() resets the streak when it recovers,
+  // so the interval snaps back to INTERVAL_S automatically.
+  const schedule = () => {
+    const delay =
+      _unreachableStreak >= UNREACHABLE_THRESHOLD
+        ? UNREACHABLE_BACKOFF_S * 1000
+        : INTERVAL_S * 1000;
+    setTimeout(() => {
+      poll(false);
+      schedule();
+    }, delay);
+  };
+  poll(false);
+  schedule();
 }
 
 function usage() {

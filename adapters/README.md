@@ -1,9 +1,11 @@
 # Agent adapters
 
 The Herdr keybinding / sidebar token covers **every** agent — no adapter needed.
-These adapters add a `/todo` slash command (or rule) inside a specific agent. All
-of them call the same engine via `todo` on PATH (installed by setup into
-`~/.local/bin/todo`), falling back to the stable launcher
+The **todo pane auto-opens for any agent** Herdr detects running in a workspace
+with open todos (driven by Herdr's agent registry, not by any one agent's
+adapter). These adapters add a `/todo` slash command (or rule) inside a
+specific agent. All of them call the same engine via `todo` on PATH (installed
+by setup into `~/.local/bin/todo`), falling back to the stable launcher
 `~/.config/herdr/herdr-todo`.
 
 **Quick onboarding:** `~/.config/herdr/herdr-todo adapters install`
@@ -27,6 +29,11 @@ auto-installs the global adapters (pi, OpenCode, Grok) plus the global
 > `todo pane` (or `/todo pane` / `<leader>t`) opens a **live** right-hand pane on
 > the first tab that lists todos and re-renders on every change to `TODOS.md` / `TODO.md`
 > (`pane --file <path>` renders that file instead). Bare `herdr-todo open` is an alias.
+>
+> `adapters install` also runs `herdr integration install pi|opencode|grok`
+> (best-effort) so Herdr detects those agents even when launched in a plain
+> shell, which is what drives the auto-opened todo pane. Cline has no detection
+> hook — start it with `herdr agent start --kind cline`.
 
 ## Prerequisite
 

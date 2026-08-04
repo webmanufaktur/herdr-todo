@@ -22,7 +22,7 @@ still creates `TODOS.md`.
 | **Portable todo file** | `TODOS.md` (or `TODO.md`) at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
 | **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
-| **Auto-open a todo pane** | when a workspace has open todos, the poller opens a right-hand pane on the first tab with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
+| **Auto-open a todo pane** | when an agent is running in a workspace (any Herdr-detected kind — pi, opencode, grok, cline, …) and that project has open todos, the poller opens a right-hand pane on the first tab with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
 | **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane on the first tab with a **live** `todo list` that refreshes every few seconds |
 | **`/todo` in your agent** | per-agent adapters (pi, OpenCode, Cline, Grok) |
 
@@ -148,11 +148,27 @@ node todo-watch.mjs 4 --file example.md     # direct in any shell pane
 
 ### Auto-open (default on)
 
-By default the poller **auto-opens** a todo pane for any workspace that has open
-todos — and closes it again when all of that workspace's todos are done. It never
-duplicates a pane that's already showing the todos, and tracks which panes it
-opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
+By default the poller **auto-opens** a todo pane for any workspace that has an
+agent running and open todos — and closes it again when all of that workspace's
+todos are done. "Agent running" is read from Herdr's **own** agent registry
+(`herdr agent list` / per-workspace `agent_status`), so it works for every
+agent kind Herdr recognizes — pi, opencode, grok, cline, codex, … — with no
+agent-specific wiring. It never duplicates a pane that's already showing the
+todos, and tracks which panes it opened in
+`~/.config/herdr/herdr-todo-state.json`. Disable it with
 `HERDR_TODO_AUTO_OPEN=0` in the keep-alive environment.
+
+Two lifecycle details:
+
+- A workspace with open todos but **no agent running** gets no pane (an empty
+  project doesn't sprout panes).
+- Once open, a pane stays until its todos are done even if the agent exits —
+  it reopens automatically the next time an agent runs in that workspace.
+
+To make sure Herdr sees agents you launch in a plain shell (rather than via
+`herdr agent start`), run `herdr integration install pi|opencode|grok` —
+`adapters install` does this for you. Cline has no detection hook, so start it
+with `herdr agent start --kind cline` to get the auto-opened pane.
 
 ## Format
 
