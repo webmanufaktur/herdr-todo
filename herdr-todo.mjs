@@ -800,7 +800,7 @@ function usage() {
 
 Engine commands (also available as \`todo\` on PATH after setup):
   list [--all]   List open tasks
-  status         Open counts per section
+  status         Open counts per group
   add <body>     Add a task
   done <id|text> Mark done (moves to Done + stamps t:)
   open <text>    Reopen a done task

@@ -204,6 +204,7 @@ herdr-todo/
 ├── todo                     # shell launcher → node todo.mjs
 ├── todo-watch.mjs           # live-updating todo pane (the `todo open` payload)
 ├── herdr-todo.mjs           # Herdr plugin engine (poller + setup/teardown + adapters)
+├── example.md               # canonical two-level todo template (## group → ### features)
 ├── test.mjs                 # engine test suite
 └── adapters/
     ├── pi/                  # pi package → /todo

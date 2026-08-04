@@ -32,8 +32,8 @@ If no `<cmd>` is given, use `list`.
 
 | Command | What it does |
 |---|---|
-| `list` (default) | List open tasks, grouped by section |
-| `status` | Open counts per section |
+| `list` (default) | List open tasks, grouped by `##` group (bold header + one card per `###` feature bucket on a TTY) |
+| `status` | Open counts per group |
 | `add <body>` | Add a task, e.g. `add "(A) Fix login @server +p0 due:2026-01-15"` |
 | `done <id\|text>` | Mark a task done (moves to Done + stamps `t:`) |
 | `open <text>` | Reopen a done task (clears checkbox + strips `t:`) |
