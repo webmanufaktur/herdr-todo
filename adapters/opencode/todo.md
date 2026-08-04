@@ -1,8 +1,9 @@
 ---
-description: Manage open todos (TODOS.md) — list, add, done, open, status, next, init
+description: Manage open todos (TODOS.md / TODO.md) — list, add, done, open, status, next, init
 ---
 
-Manage the project's open todos in `TODOS.md` (todo.txt markup) and report the result.
+Manage the project's open todos in `TODOS.md` or `TODO.md` (todo.txt markup;
+`TODOS.md` preferred when both exist) and report the result.
 
 Run the first available engine and show its stdout:
 

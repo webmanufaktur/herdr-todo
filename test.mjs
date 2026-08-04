@@ -74,6 +74,29 @@ withProject((dir) => {
   check("finds TODOS.md from subdir", r.code === 0 && r.out.includes("Nested task"), r.out);
 });
 
+console.log("discovery (TODO.md alias)");
+withProject((dir) => {
+  const sub = join(dir, "a", "b");
+  mkdirSync(sub, { recursive: true });
+  writeFileSync(
+    join(dir, "TODO.md"),
+    "# TODO\n\n## Backlog\n- [ ] (A) Alias task @server +p0\n",
+    "utf8",
+  );
+  const r = run(["list"], sub);
+  check("finds TODO.md from subdir", r.code === 0 && r.out.includes("Alias task"), r.out);
+  const count = run(["count"], dir);
+  check("count works on TODO.md", count.out === "1", count.out);
+});
+
+console.log("discovery (TODOS.md preferred over TODO.md)");
+withProject((dir) => {
+  writeFileSync(join(dir, "TODO.md"), "# TODO\n\n## Backlog\n- [ ] (A) From TODO.md\n", "utf8");
+  writeFileSync(join(dir, "TODOS.md"), "# TODOS\n\n## Backlog\n- [ ] (A) From TODOS.md\n", "utf8");
+  const r = run(["list"], dir);
+  check("prefers TODOS.md when both exist", r.out.includes("From TODOS.md") && !r.out.includes("From TODO.md"), r.out);
+});
+
 console.log("error handling");
 withProject((dir) => {
   const r = run(["list"], dir);

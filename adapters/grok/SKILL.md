@@ -1,18 +1,19 @@
 ---
 name: todo
 description: >
-  Manage open todos in a project's TODOS.md (todo.txt markup) — list, add,
-  complete, reopen, and status. The Herdr sidebar shows the open count next to
-  the branch. Use when asked to show/track todos, list open tasks, add a task,
+  Manage open todos in a project's TODOS.md or TODO.md (todo.txt markup) — list,
+  add, complete, reopen, and status. The Herdr sidebar shows the open count next
+  to the branch. Use when asked to show/track todos, list open tasks, add a task,
   mark something done, see what's left, or run /todo.
 metadata:
-  short-description: "Track open todos (TODOS.md)"
+  short-description: "Track open todos (TODOS.md / TODO.md)"
 ---
 
 # /todo -- Project todos
 
-Manage open todos in `TODOS.md` (todo.txt markup). Always use the engine — never
-hand-edit task lines (except when the engine is unreachable; see fallback below).
+Manage open todos in `TODOS.md` or `TODO.md` (todo.txt markup; `TODOS.md` preferred
+when both exist). Always use the engine — never hand-edit task lines (except when
+the engine is unreachable; see fallback below).
 
 ## Usage
 
@@ -50,7 +51,7 @@ If no `<cmd>` is given, use `list`.
 ## Hand-edit fallback (only when `todo` is unreachable)
 
 If every launcher above fails (PATH missing, plugin not set up, no node), you
-may edit `TODOS.md` by hand. Match the engine's exact markup so the next
+may edit the todo file by hand. Match the engine's exact markup so the next
 `todo` run stays consistent:
 
 | Action | What to write |

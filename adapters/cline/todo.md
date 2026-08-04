@@ -1,6 +1,7 @@
 ## Project todos (Herdr sidebar count)
 
-Open todos live in `TODOS.md` (todo.txt markup) at the project root. The Herdr
+Open todos live in `TODOS.md` or `TODO.md` (todo.txt markup) at the project root
+(`TODOS.md` preferred when both exist). The Herdr
 sidebar shows the open count next to the branch. Manage them with the engine —
 do not hand-edit task lines except when the engine is unreachable (see fallback).
 

@@ -217,7 +217,7 @@ function poll(dryRun) {
     n += 1;
   }
   if (AUTO_OPEN) writeState(state);
-  if (dryRun) console.log(`\n${n} workspace(s) with a TODOS.md. No metadata written.`);
+  if (dryRun) console.log(`\n${n} workspace(s) with a TODOS.md/TODO.md. No metadata written.`);
   return 0;
 }
 
@@ -521,7 +521,7 @@ function cmdStatus() {
     for (const w of ws) {
       const root = gitDirFor(w, cwdMap);
       const count = root ? countOpenIn(root) : null;
-      lines.push(`  ${w.label || w.workspace_id}: ${count === null ? "no TODOS.md" : count + " open"}`);
+      lines.push(`  ${w.label || w.workspace_id}: ${count === null ? "no TODOS.md/TODO.md" : count + " open"}`);
     }
   }
   return lines.join("\n");
@@ -618,9 +618,9 @@ function cmdOpen(args) {
   const root = focused ? gitDirFor(focused, cwdMap) : process.cwd();
   const dir = root || process.cwd();
 
-  // Check there's a TODOS.md to show.
+  // Check there's a TODOS.md/TODO.md to show.
   if (!todosFileFor(dir)) {
-    return `no TODOS.md in ${dir} — run: todo init`;
+    return `no TODOS.md or TODO.md in ${dir} — run: todo init`;
   }
 
   const paneId = openTodoPane(focused?.workspace_id, dir);

@@ -2,7 +2,7 @@ id = "herdr-todo"
 name = "Sidebar Todos"
 version = "0.1.0"
 min_herdr_version = "0.7.0"
-description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md), and open a right-hand pane listing todos. Live, per-workspace, via a background poller (launchd on macOS, systemd on Linux)."
+description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md or TODO.md), and open a right-hand pane listing todos. Live, per-workspace, via a background poller (launchd on macOS, systemd on Linux)."
 platforms = ["linux", "macos"]
 
 [[actions]]

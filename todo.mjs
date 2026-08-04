@@ -4,7 +4,7 @@
 //   - the `todo` CLI (list / add / done / open / status / next / init)
 //   - the engine behind the herdr-todo Herdr plugin (via the adapters/launcher)
 //
-// Format — a single TODOS.md at the project root (walked up from cwd):
+// Format — a single TODOS.md or TODO.md at the project root (walked up from cwd):
 //
 //   # TODOS
 //
@@ -26,6 +26,8 @@ import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 
 const FILE_NAME = "TODOS.md";
+// Accepted names, in preference order. `todo init` still writes FILE_NAME.
+const FILE_NAMES = ["TODOS.md", "TODO.md"];
 const DEFAULT_SECTION = "Backlog";
 
 // ---- discovery ------------------------------------------------------------
@@ -33,8 +35,10 @@ const DEFAULT_SECTION = "Backlog";
 function findTodos(startDir) {
   let dir = startDir;
   for (;;) {
-    const candidate = join(dir, FILE_NAME);
-    if (existsSync(candidate)) return candidate;
+    for (const name of FILE_NAMES) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;
@@ -174,7 +178,7 @@ function moveToDoneSection(text, raw, changed) {
 
 function cmdList(args) {
   const file = findTodos(process.cwd());
-  if (!file) return fail("no TODOS.md found (walked up from cwd). Run: todo init");
+  if (!file) return fail("no TODOS.md or TODO.md found (walked up from cwd). Run: todo init");
   const { all, section, project, context } = args;
   const sections = parse(readFileSync(file, "utf8"));
   const bySection = process.stdout.isTTY;
@@ -204,7 +208,7 @@ function renderTask(t) {
 
 function cmdStatus() {
   const file = findTodos(process.cwd());
-  if (!file) return fail("no TODOS.md found. Run: todo init");
+  if (!file) return fail("no TODOS.md or TODO.md found. Run: todo init");
   const sections = parse(readFileSync(file, "utf8"));
   const lines = [];
   let total = 0;
@@ -230,7 +234,7 @@ function cmdAdd(body) {
 
 function cmdDone(ref) {
   const file = findTodos(process.cwd());
-  if (!file) return fail("no TODOS.md found.");
+  if (!file) return fail("no TODOS.md or TODO.md found.");
   const text = readFileSync(file, "utf8");
   const sections = parse(text);
   const t = findTask(sections, ref);
@@ -244,7 +248,7 @@ function cmdDone(ref) {
 
 function cmdOpen(ref) {
   const file = findTodos(process.cwd());
-  if (!file) return fail("no TODOS.md found.");
+  if (!file) return fail("no TODOS.md or TODO.md found.");
   const text = readFileSync(file, "utf8");
   const sections = parse(text);
   const all = sections.flatMap((s) => s.tasks).filter((t) => !t.open);
@@ -261,7 +265,7 @@ function cmdOpen(ref) {
 
 function cmdNext() {
   const file = findTodos(process.cwd());
-  if (!file) return fail("no TODOS.md found.");
+  if (!file) return fail("no TODOS.md or TODO.md found.");
   const sections = parse(readFileSync(file, "utf8"));
   const open = openTasks(sections);
   if (open.length === 0) return "no open todos. 🎉";
@@ -343,7 +347,7 @@ function parseArgs(args) {
 }
 
 function usage() {
-  return `todo — portable TODOS.md engine
+  return `todo — portable TODOS.md / TODO.md engine
 
 Usage:
   todo list [--all]            List open tasks (grouped by section)
@@ -354,11 +358,13 @@ Usage:
   todo next                    Top-priority open task
   todo init                    Create a TODOS.md in cwd
   todo count                   Number of open tasks (for scripts/sidebar)
+
+Looks for TODOS.md or TODO.md walking up from cwd (TODOS.md preferred).
 `;
 }
 
 // Module API for the herdr plugin (and adapter scripts).
-export { findTodos, parse, openTasks, countOpen, FILE_NAME, DEFAULT_SECTION };
+export { findTodos, parse, openTasks, countOpen, FILE_NAME, FILE_NAMES, DEFAULT_SECTION };
 
 // Run the CLI only when executed directly (not when imported).
 const isDirectRun =

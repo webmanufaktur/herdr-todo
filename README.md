@@ -6,18 +6,20 @@ right-hand pane listing open todos.
 
 The file is the interface, not the agent: **any** agent (pi, Claude Code,
 OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
-`TODOS.md`. The engine and plugin are thin layers over it.
+todo file. The engine and plugin are thin layers over it. Discovery accepts
+`TODOS.md` or `TODO.md` (preferring `TODOS.md` when both exist); `todo init`
+still creates `TODOS.md`.
 
 ```
  master  ~5 +2  ↑        ← branch · changed · untracked · git_status
- 3 todos                  ← open todos (from TODOS.md, vanishes when 0)
+ 3 todos                  ← open todos (from TODOS.md / TODO.md, vanishes when 0)
 ```
 
 ## What you get
 
 | Capability | How |
 |---|---|
-| **Portable todo file** | `TODOS.md` at project root, todo.txt markup, git-committed |
+| **Portable todo file** | `TODOS.md` (or `TODO.md`) at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
 | **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
 | **Auto-open a todo pane** | when a workspace has open todos, the poller opens a right-hand pane with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
@@ -95,8 +97,8 @@ todo list every few seconds. Plugin panes are display surfaces managed by Herdr
 — they are not interactive shells, so `herdr agent start` correctly refuses them
 (`agent_pane_busy`) instead of hijacking the live list.
 
-Add/complete tasks in `TODOS.md` (anywhere — the engine, an agent, or your
-editor) and the pane updates automatically.
+Add/complete tasks in `TODOS.md` / `TODO.md` (anywhere — the engine, an agent,
+or your editor) and the pane updates automatically.
 
 ### Auto-open (default on)
 
@@ -108,7 +110,7 @@ which panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it wit
 
 ## Format
 
-`TODOS.md` uses GitHub task-list checkboxes + todo.txt metadata tags:
+`TODOS.md` (or `TODO.md`) uses GitHub task-list checkboxes + todo.txt metadata tags:
 
 ```markdown
 # TODOS
