@@ -1,12 +1,12 @@
 # Plan — Hand-rolled ANSI UI for the `todo` list (Option 2.1)
 
 > Implementation plan for option **2.1 Hand-rolled ANSI styling (zero dep)** from
-> `PLAN-visual-todo.md`. Covers **Phase 1 (MVP styling)** and **Phase 2 (cards,
+> `.plans/visual-todo.md`. Covers **Phase 1 (MVP styling)** and **Phase 2 (cards,
 > density, width, live refresh)**. Phase 3 (optional `gum`/`glow`) is **out of
 > scope** and intentionally omitted.
 >
 > **Plan only. No application code is changed in this step.** The only file this
-> plan authorizes creating/editing is itself (`PLAN-ansi-ui-opencode.md`).
+> plan authorizes creating/editing is itself (`.plans/ansi-ui-opencode.md`).
 
 ---
 
@@ -79,7 +79,7 @@ instead of a wall of text, while:
 
 ### Constraints confirmed
 - `package.json`: zero `dependencies` (`package.json:1-14`). **Do not add any.**
-- Node 24, macOS/Linux only (`PLAN-visual-todo.md:35`).
+- Node 24, macOS/Linux only (`.plans/visual-todo.md:35`).
 - `TERM=xterm-256color`; `NO_COLOR` not yet honored anywhere.
 
 ## 3. Architecture
@@ -284,7 +284,7 @@ always stays):
 Done tasks: dim (`2`) + strikethrough (`9`); glyph `✓` in dim green (`2;32`).
 
 ### 5.2 Color precedence (`resolveColor(colorFlag, env, isTTY)`)
-Implemented in this exact order (matches `PLAN-visual-todo.md` §3.2):
+Implemented in this exact order (matches `.plans/visual-todo.md` §3.2):
 
 1. `colorFlag === "always"` → `true`.
 2. `colorFlag === "never"` → `false`.
@@ -638,7 +638,7 @@ TTY).
 | Two-spawn-per-tick overhead | Eliminated by in-process import (§7.1). |
 
 ## 13. Out of scope (noted for later, not in this plan)
-- **Phase 3** optional `gum`/`glow` enhancement (`PLAN-visual-todo.md` §5 Phase 3).
+- **Phase 3** optional `gum`/`glow` enhancement (`.plans/visual-todo.md` §5 Phase 3).
 - Interactive flows: `fzf`/`gum choose` for `todo done --pick`. The plugin tab
   is display-only (`herdr-todo.mjs:637`); these are CLI-only future work.
 - Wiring the parsed-but-unused `--section`/`--project`/`--context` filters in
