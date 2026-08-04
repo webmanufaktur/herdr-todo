@@ -43,10 +43,16 @@ If no `<cmd>` is given, use `list`.
 
 ## Format
 
-- `- [ ]` open, `- [x]` done
+- File layout: `## GROUPNAME` groups; under each, `### FEATURENAME` feature
+  buckets hold related tasks (any name — e.g. a `### BACKLOG` for uncategorized
+  ideas). `## Done` at the bottom holds completed tasks.
+- Task lines: `- [ ]` open, `- [x]` done
 - `(A)`..`(Z)` priority, `(A)` highest
 - `+section`/`+project`, `@context`
 - `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date — only on completed tasks)
+
+The todo file header carries usage instructions (written by `todo init`) —
+follow them when editing by hand.
 
 ## Hand-edit fallback (only when `todo` is unreachable)
 
@@ -56,7 +62,7 @@ may edit the todo file by hand. Match the engine's exact markup so the next
 
 | Action | What to write |
 |---|---|
-| **Add** | `- [ ] (A) Task text @ctx +section due:YYYY-MM-DD` under a non-Done `##` section |
+| **Add** | `- [ ] (A) Task text @ctx +section due:YYYY-MM-DD` under a non-Done `##` group (inside a `###` bucket) |
 | **Complete** | Change `- [ ]` → `- [x]`, move the line under `## Done`, append ` t:YYYY-MM-DD` (today) |
 | **Reopen** | Change `- [x]` → `- [ ]`, move out of `## Done`, **remove** any ` t:YYYY-MM-DD` |
 

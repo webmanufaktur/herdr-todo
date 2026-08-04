@@ -19,12 +19,16 @@ Bare `open` via `herdr-todo open` opens a live right-hand pane on the first tab.
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date, completed tasks only).
+File layout: `## GROUPNAME` groups, each with `### FEATURENAME` feature buckets
+(any name — e.g. `### BACKLOG` for uncategorized ideas); `## Done` at the bottom
+holds completed tasks. The file header carries the usage instructions — follow
+them.
 
 ### Hand-edit fallback (only when `todo` is unreachable)
 
 | Action | Markup |
 |---|---|
-| Add | `- [ ] (A) Task text @ctx +section` under a non-Done `##` section |
+| Add | `- [ ] (A) Task text @ctx +section` under a non-Done `##` group (inside a `###` bucket) |
 | Complete | `- [x] … t:YYYY-MM-DD` under `## Done` |
 | Reopen | `- [ ] …` outside Done, **no** `t:` stamp |
 

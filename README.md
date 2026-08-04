@@ -65,7 +65,7 @@ proxies engine commands and owns the plugin-only ones (`open` pane, `setup`, …
 
 ```
 todo list [flags]            List open tasks (styled in a TTY; flat when piped)
-todo status                  Open counts per section
+todo status                  Open counts per group
 todo add "<text>" [(A)] [+sec] [@ctx] [due:YYYY-MM-DD]
 todo done <id|text>          Mark done (moves to Done + stamps t:)
 todo open <text>             Reopen a done task (strips t:)
@@ -110,7 +110,7 @@ engine run stays consistent:
 
 | Action | Markup |
 |---|---|
-| **Add** | `- [ ] (A) Task text @ctx +section due:YYYY-MM-DD` under a non-Done `##` section |
+| **Add** | `- [ ] (A) Task text @ctx +section due:YYYY-MM-DD` under a non-Done `##` group (inside a `###` bucket) |
 | **Complete** | `- [x] … t:YYYY-MM-DD` (today), move under `## Done` |
 | **Reopen** | `- [ ] …` outside Done, **remove** any `t:YYYY-MM-DD` |
 
@@ -138,21 +138,31 @@ opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
 
 ## Format
 
-`TODOS.md` (or `TODO.md`) uses GitHub task-list checkboxes + todo.txt metadata tags:
+`TODOS.md` (or `TODO.md`) is a **two-level structure** — `## GROUPNAME` groups, each
+with `### FEATURENAME` feature buckets (any name; `### BACKLOG` is a common one for
+uncategorized ideas) — over GitHub task-list checkboxes + todo.txt metadata tags:
 
 ```markdown
 # TODOS
 
-## P0 — Do first
+> **How to use this file** — every todo file carries usage instructions in its
+> header (written by `todo init`; `todo add` also writes them for a fresh file).
+
+## P0 — Do first            ← GROUPNAME (group of related work)
+
+### FEATURENAME              ← feature bucket: name it as you like
 - [ ] (A) Add security headers @server +p0 due:2026-01-15
 
-## P1 — Should do
-- [ ] (B) Split client/src/api.ts @client +p1
+### BACKLOG                  ← example feature name (uncategorized ideas)
 
-## Done
+## P1 — Should do
+
+## Done                      ← closed group at the bottom (completed tasks)
 - [x] (A) Security headers @server +p0 t:2026-01-10
 ```
 
+- `## GROUPNAME` — group of related work; open groups at the top, `## Done` last
+- `### FEATURENAME` — feature bucket inside a group; name it however you like (e.g. `### BACKLOG` for uncategorized ideas)
 - `- [ ]` open / `- [x]` done
 - `(A)`..`(Z)` priority, `(A)` highest
 - `+section`/`+project`, `@context`

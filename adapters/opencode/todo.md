@@ -23,11 +23,15 @@ If `$ARGUMENTS` is empty, use `list`. Valid subcommands: `list`, `status`, `add 
 
 Format: `- [ ]` open, `- [x]` done, `(A)` priority (A=highest), `+section`/`+project`,
 `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date, completed tasks only).
-Always use the engine — never hand-edit task lines unless the engine is unreachable.
+File layout: `## GROUPNAME` groups, each with `### FEATURENAME` feature buckets
+(any name — e.g. `### BACKLOG` for uncategorized ideas); `## Done` at the bottom
+holds completed tasks. The file header carries the usage instructions — follow
+them. Always use the engine — never hand-edit task lines unless the engine is
+unreachable.
 
 ### Hand-edit fallback (only when both launchers fail)
 
-- Add: `- [ ] (A) Task text` under a non-Done `##` section
+- Add: `- [ ] (A) Task text` under a non-Done `##` group (inside a `###` bucket)
 - Complete: `- [x] … t:YYYY-MM-DD` under `## Done`
 - Reopen: `- [ ] …` outside Done, strip any `t:` stamp
 - Then restore: `herdr plugin action invoke herdr-todo.setup`
