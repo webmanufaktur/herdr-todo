@@ -213,11 +213,13 @@ herdr-todo/
 ├── herdr-todo.mjs           # Herdr plugin engine (poller + setup/teardown + adapters)
 ├── example.md               # canonical two-level todo template (## group → ### features)
 ├── test.mjs                 # engine test suite
+├── .plans/                  # implementation plans (visual-todo, skill-opencode, …)
 └── adapters/
     ├── pi/                  # pi package → /todo
     ├── opencode/            # slash command + tui-pkg (ctrl+x t)
     ├── cline/               # .clinerules/todo.md
-    └── grok/                # SKILL.md (Agent Skills standard)
+    ├── grok/                # SKILL.md (Agent Skills standard)
+    └── planning/            # global pi skill: plans in .plans/, todos via engine, agents in new tabs
 ```
 
 ## License

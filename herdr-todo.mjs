@@ -746,6 +746,23 @@ function cmdAdapters(args) {
       copyFileSync(grokSrc, join(grokDir, "SKILL.md"));
       out.push("grok: skill installed to ~/.grok/skills/todo/SKILL.md");
     }
+    // planning-todos — global pi skill (copy + optional cross-harness symlink).
+    const planSrc = join(root, "planning", "SKILL.md");
+    if (existsSync(planSrc)) {
+      const planDir = join(homedir(), ".pi", "agent", "skills", "planning-todos");
+      mkdirSync(planDir, { recursive: true });
+      copyFileSync(planSrc, join(planDir, "SKILL.md"));
+      out.push("planning-todos: pi skill installed to " + join(planDir, "SKILL.md"));
+      // Cross-harness discovery (pi loads ~/.agents/skills too; cheap mirror).
+      try {
+        const altDir = join(homedir(), ".agents", "skills", "planning-todos");
+        mkdirSync(altDir, { recursive: true });
+        const link = join(altDir, "SKILL.md");
+        try { rmSync(link); } catch {}
+        copyFileSync(planSrc, link);
+        out.push("planning-todos: mirrored to " + link);
+      } catch {}
+    }
     // cline — project-level rule (point to it).
     out.push("cline: copy " + join(root, "cline", "todo.md") + " to .clinerules/todo.md (project-level)");
     return out.join("\n");
@@ -756,6 +773,7 @@ function cmdAdapters(args) {
       { name: "pi", dir: "pi", install: "pi install " + join(root, "pi") },
       { name: "opencode", dir: "opencode", install: "copy " + join(root, "opencode/todo.md") + " to ~/.config/opencode/commands/todo.md, then opencode plugin " + join(root, "opencode/tui-pkg") + " --global" },
       { name: "grok", dir: "grok", install: "copy " + join(root, "grok/SKILL.md") + " to ~/.grok/skills/todo/SKILL.md" },
+      { name: "planning-todos", dir: "planning", install: "copy " + join(root, "planning/SKILL.md") + " to ~/.pi/agent/skills/planning-todos/SKILL.md (+ ~/.agents/skills/planning-todos)" },
       { name: "cline", dir: "cline", install: "copy " + join(root, "cline/todo.md") + " to .clinerules/todo.md (project-level)" },
     ];
     for (const e of entries) {

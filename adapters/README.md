@@ -7,8 +7,9 @@ of them call the same engine via `todo` on PATH (installed by setup into
 `~/.config/herdr/herdr-todo`.
 
 **Quick onboarding:** `~/.config/herdr/herdr-todo adapters install`
-auto-installs the global adapters (pi, OpenCode, Grok) and prints where to put
-the project-level ones (Cline). Use `adapters list` to see status.
+auto-installs the global adapters (pi, OpenCode, Grok) plus the global
+**planning-todos** pi skill, and prints where to put the project-level ones
+(Cline). Use `adapters list` to see status.
 
 | Agent | Adapter | Install |
 |---|---|---|
@@ -16,6 +17,7 @@ the project-level ones (Cline). Use `adapters list` to see status.
 | **OpenCode** | `opencode/todo.md` + `opencode/tui-pkg/` | copy to `~/.config/opencode/commands/todo.md`, then `opencode plugin ./opencode/tui-pkg --global` (adds `ctrl+x t` + palette) |
 | **Grok** | `grok/SKILL.md` | copy to `~/.grok/skills/todo/SKILL.md` |
 | **Cline** | `cline/todo.md` | copy to `.clinerules/todo.md` |
+| **planning-todos** (global pi skill) | `planning/SKILL.md` | copy to `~/.pi/agent/skills/planning-todos/SKILL.md` (+ mirror to `~/.agents/skills/`) — plans in `.plans/`, todos via the engine, agents in new tabs |
 
 > Slash-command agents (pi, OpenCode) run the engine in one step. OpenCode
 > additionally gets a `ctrl+x t` keybinding + command palette (installed as a
