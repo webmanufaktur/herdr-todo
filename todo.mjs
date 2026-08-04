@@ -8,18 +8,26 @@
 //
 //   # TODOS
 //
-//   ## P0 — Do first
+//   > **How to use this file** — every todo file starts with these instructions
+//   > (written by `todo init`; `todo add` also writes them for a fresh file).
+//
+//   ## P0 — Do first            ← GROUPNAME (a group of related work)
+//
+//   ### FEATURENAME              ← feature bucket: tasks that belong together
 //   - [ ] (A) Add security headers @server +p0 due:2026-01-15
 //
-//   ## P1 — Should do
-//   - [ ] (B) Split client/src/api.ts  @client +p1
+//   ### BACKLOG                  ← example feature name (uncategorized ideas)
+//   - [ ] (B) Maybe add a dark mode @client +p1
 //
-//   ## Done
+//   ## Done                      ← closed group at the bottom (completed tasks)
 //   - [x] (A) Security headers @server +p0 t:2026-01-10
 //
-// Task lines are GitHub task-list checkboxes (`- [ ]` / `- [x]`) with
-// todo.txt metadata tags: `(A)`..`(Z)` priority, `+project`/`+section`,
-// `@context`, `due:YYYY-MM-DD`, `t:YYYY-MM-DD` (done date).
+// Groups are `## HEADING`. Inside a group, `### FEATURENAME` headings name
+// feature buckets (any name works — `### BACKLOG` is just a common one for
+// uncategorized ideas); task lines live under a `###` heading. Task lines are
+// GitHub task-list checkboxes (`- [ ]` / `- [x]`) with todo.txt metadata tags:
+// `(A)`..`(Z)` priority, `+project`/`+section`, `@context`, `due:YYYY-MM-DD`,
+// `t:YYYY-MM-DD` (done date).
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -134,7 +142,8 @@ function stripDoneStamp(raw) {
 }
 
 // Insert a task line at the end of the first section whose heading is not
-// "Done" (the top of the list); appends a new section if none exists.
+// "Done" (the top of the list); appends a new group if none exists.
+// New tasks simply land at the end of the top group's body.
 function insertIntoSection(text, line) {
   const lines = text.split("\n");
   const newLines = [];
@@ -145,6 +154,8 @@ function insertIntoSection(text, line) {
     if (sec) {
       if (inOpenSection && !inserted) {
         newLines.push(line);
+        // keep one blank line between the last task and the next group heading
+        if (newLines[newLines.length - 1] !== "") newLines.push("");
         inserted = true;
       }
       inOpenSection = sec[1].trim().toLowerCase() !== "done";
@@ -167,12 +178,22 @@ function moveToDoneSection(text, raw, changed) {
   const doneIdx = lines.findIndex((l) => /^##\s+done\s*$/i.test(l.trim()));
   if (doneIdx === -1) {
     const appended = lines.filter((l) => l !== raw);
-    return appended.concat("", "## Done", changed).join("\n");
+    return normalizeBlank(appended.concat("", "## Done", "", changed).join("\n"));
   }
   const afterDone = lines.slice(doneIdx + 1).filter((l) => !l.startsWith("## "));
   const before = lines.slice(0, doneIdx + 1).filter((l) => l !== raw);
   const trailing = lines.slice(doneIdx + 1).filter((l) => l.startsWith("## "));
-  return before.concat(...afterDone.filter(Boolean), changed, ...trailing).join("\n");
+  return normalizeBlank(
+    before.concat(...afterDone.filter(Boolean), "", changed, ...trailing).join("\n"),
+  );
+}
+
+// Cosmetic: collapse 3+ blank lines into one, and keep the `## Done` heading on
+// its own paragraph (blank line after the heading, before the first task).
+function normalizeBlank(text) {
+  return text
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/(^|\n)(## Done)(\n)(?=\S)/, "$1$2$3\n");
 }
 
 // ---- commands --------------------------------------------------------------
@@ -261,31 +282,39 @@ function cmdNext() {
   return `(${t.priority ?? "?"}) ${t.clean}  [${t.section}]`;
 }
 
-function cmdInit() {
-  const file = join(process.cwd(), FILE_NAME);
-  if (existsSync(file)) return fail(`${file} already exists`);
-  const template = `# TODOS
+// The standard file template: usage instructions + the two-level layout
+// (## GROUPNAME → ### FEATURENAME feature buckets, then ## Done).
+// Every TODO.md / TODOS.md carries this header so the format is self-describing.
+function template() {
+  return `# TODOS
 
-> **Legend — what each prefix means**
-> - \`- [ ]\` → open task &nbsp;·&nbsp; \`- [x]\` → done task
-> - \`(A)\`–\`(Z)\` → priority, \`(A)\` = highest
-> - \`+section\` / \`+project\` → group or project tag
-> - \`@context\` → where/with-what (e.g. \`@server\`, \`@client\`)
-> - \`due:YYYY-MM-DD\` → due date
-> - \`t:YYYY-MM-DD\` → done date (stamped automatically when completed)
+> **How to use this file**
+> - \`## GROUPNAME\` — a group of related work (e.g. \`P0 — Do first\`). Open groups at the top, \`## Done\` at the bottom.
+> - \`### FEATURENAME\` — a feature bucket inside a group; name it however you like
+>   (e.g. \`### BACKLOG\` for uncategorized ideas). Tasks live under a \`###\` heading.
+> - Tasks are \`- [ ]\` (open) / \`- [x]\` (done) lines, with optional
+>   \`(A)\`–\`(Z)\` priority, \`+project\`/\`@context\` tags and \`due:YYYY-MM-DD\`.
+>   Completing stamps \`t:YYYY-MM-DD\` (done date) automatically.
+> - Manage with \`todo\` (list/add/done/open/status/next/init) — never hand-edit task lines.
 >
 > Example: \`- [ ] (A) Add security headers @server +p0 due:2026-01-15\`
-> Manage with \`todo\` (this project's engine) — never hand-edit task lines.
 
 ## P0 — Do first
 
+### FEATURENAME
+
 ## P1 — Should do
 
-## Backlog
+### FEATURENAME
 
 ## Done
 `;
-  writeFileSync(file, template, "utf8");
+}
+
+function cmdInit() {
+  const file = join(process.cwd(), FILE_NAME);
+  if (existsSync(file)) return fail(`${file} already exists`);
+  writeFileSync(file, template(), "utf8");
   return `created ${file}`;
 }
 
@@ -342,7 +371,7 @@ function usage() {
 
 Usage:
   todo list [flags]            List open tasks (styled in a TTY; flat when piped)
-  todo status                  Open counts per section
+  todo status                  Open counts per group
   todo add "<text>" [(A)] [+sec] [@ctx] [due:YYYY-MM-DD]
   todo done <id|text>          Mark done (moves to [x] + stamps t:)
   todo open <text>             Reopen a done task
