@@ -27,8 +27,9 @@ auto-installs the global adapters (pi, OpenCode, Grok) plus the global
 > package via `opencode plugin`). Grok and Cline are instructed via a skill /
 > rules file to run `~/.config/herdr/herdr-todo …` when you ask.
 >
-> `todo pane` (or `/todo pane` / `<leader>t`) opens a **live** right-hand pane on
-> the first tab that lists todos and re-renders on every change to `TODOS.md` / `TODO.md`
+> `todo pane` (or `/todo pane` / `<leader>t`) opens a **live** dedicated todo
+> tab per present todo file (TODO.md / TODOS.md each get their own) that lists
+> todos and re-renders on every change to `TODOS.md` / `TODO.md`
 > (`pane --file <path>` renders that file instead). Bare `herdr-todo open` is an alias.
 >
 > `adapters install` also runs `herdr integration install pi|opencode|grok`

@@ -2,11 +2,11 @@
 // herdr-todo — Herdr plugin + engine for the todo engine (`todo`).
 //
 // As a Herdr plugin it mirrors herdr-changed:
-//   - polls each workspace's TODOS.md and reports a `$todos_open` sidebar token
+//   - polls each workspace's TODOS.md/TODO.md and reports a `$todos_open` sidebar token
 //   - when a workspace is active (any agent running — pi, opencode, grok,
-//     cline, … — or simply has panes open) with open todos, opens a right-hand
-//     pane listing todos on the first tab (plugin split); closes it when the
-//     todos hit 0
+//     cline, … — or simply has panes open), opens a dedicated TODO TAB for
+//     each present todo file (TODO.md and TODOS.md each get their own tab);
+//     the tab stays open even when the todos hit 0
 //   - `setup`/`teardown` wire the sidebar token + install a keep-alive poller
 //   - `adapters` installs the per-agent /todo adapters (pi/opencode/cline/grok)
 //
@@ -17,7 +17,7 @@ import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { findTodos, parse, openTasks } from "./todo.mjs";
+import { parse, openTasks } from "./todo.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOME = homedir();
@@ -30,21 +30,24 @@ const ENGINE = join(__dirname, "todo.mjs");
 const STATE_FILE = join(CONFIG_DIR, "herdr-todo-state.json");
 const SOURCE = "herdr-todo";
 const PLUGIN_ID = "herdr-todo";
-const PANE_ENTRYPOINT = "todos";
 
-// Engine subcommands (todo.mjs). "open" is shared: bare `open` → todo pane,
+// Every present todo file is important — both TODO.md and TODOS.md get their
+// own tab. Discovery returns ALL present files (never prefer one over the other).
+const TODO_FILE_NAMES = ["TODOS.md", "TODO.md"];
+
+// Engine subcommands (todo.mjs). "open" is shared: bare `open` → todo tab(s),
 // `open <text>` → reopen a done task via the engine.
 const ENGINE_CMDS = new Set(["list", "status", "add", "done", "next", "init", "count"]);
 
-// Display title for the live todo list pane.
+// Display title for the live todo list tab.
 const TODO_PANE_TITLE = "todo";
 
-// Auto-open toggle: when set, the poller opens a todo pane for any active
-// workspace — one with an agent running (**any** Herdr-detected kind: pi,
-// opencode, grok, cline, codex, …) or simply with panes open (covers manual
-// agent launches Herdr can't yet detect) — that has open todos, and closes
-// it again when the todos reach 0. Driven by Herdr's own workspace/agent
-// registry, not by any one agent's extension.
+// Auto-open toggle: when set, the poller opens a dedicated todo TAB (one per
+// present todo file) for any active workspace — one with an agent running
+// (**any** Herdr-detected kind: pi, opencode, grok, cline, codex, …) or simply
+// with panes open (covers manual agent launches Herdr can't yet detect). The
+// tab stays open even when the todos reach 0. Driven by Herdr's own
+// workspace/agent registry, not by any one agent's extension.
 const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
 // Poll health: while the Herdr server is unreachable we back off and log at
@@ -125,11 +128,20 @@ function paneIdsByWorkspace() {
 // ---- todo-pane state (which pane we opened per workspace) ----------------------
 
 function readState() {
+  let state = {};
   try {
-    return JSON.parse(readFileSync(STATE_FILE, "utf8")) || {};
+    state = JSON.parse(readFileSync(STATE_FILE, "utf8")) || {};
   } catch {
-    return {};
+    state = {};
   }
+  // Normalize legacy entry shape: workspace_id -> pane_id (scalar). That becomes
+  // workspace_id -> {} (the per-file map). The per-file tabs re-open on next poll.
+  for (const [wid, v] of Object.entries(state)) {
+    if (typeof v !== "object" || v === null || Array.isArray(v)) {
+      state[wid] = {};
+    }
+  }
+  return state;
 }
 
 function writeState(state) {
@@ -139,10 +151,27 @@ function writeState(state) {
 }
 
 // Clean stale entries where the recorded pane no longer exists.
+// State shape: workspace_id -> { basename(file) -> { tab_id, pane_id } }.
 function pruneState(state, paneIdsByWs) {
   let changed = false;
-  for (const [wid, pid] of Object.entries(state)) {
-    if (!(paneIdsByWs[wid] || []).includes(pid)) {
+  for (const [wid, entry] of Object.entries(state)) {
+    const isMap =
+      typeof entry === "object" && entry !== null && !Array.isArray(entry);
+    if (!isMap) {
+      // Legacy scalar pane_id → drop (tabs re-open on next poll via auto-open).
+      delete state[wid];
+      changed = true;
+      continue;
+    }
+    for (const [key, rec] of Object.entries(entry)) {
+      const pid =
+        typeof rec === "object" && rec !== null ? (rec.pane_id ?? null) : rec;
+      if (!pid || !(paneIdsByWs[wid] || []).includes(pid)) {
+        delete entry[key];
+        changed = true;
+      }
+    }
+    if (!Object.keys(entry).length) {
       delete state[wid];
       changed = true;
     }
@@ -164,16 +193,24 @@ function gitDirFor(ws, cwdMap) {
   return null;
 }
 
-function todosFileFor(root) {
-  if (!root || !existsSync(root)) return null;
-  return findTodos(root);
+// Every present todo file in a repo root — both TODO.md and TODOS.md are
+// important, so we return ALL of them (never drop one because the other exists).
+function todoFilesFor(root) {
+  if (!root || !existsSync(root)) return [];
+  return TODO_FILE_NAMES.map((n) => join(root, n)).filter(existsSync);
 }
 
-function countOpenIn(root) {
-  const file = todosFileFor(root);
-  if (!file) return null;
+// Open task count in one specific todo file.
+function countOpenInFile(file) {
   const sections = parse(readFileSync(file, "utf8"));
   return openTasks(sections).length;
+}
+
+// Total open tasks across every present todo file (null when none exist).
+function countOpenIn(root) {
+  const files = todoFilesFor(root);
+  if (!files.length) return null;
+  return files.reduce((n, f) => n + countOpenInFile(f), 0);
 }
 
 // ---- token reporting --------------------------------------------------------
@@ -269,7 +306,7 @@ function poll(dryRun) {
     const active = hasAgent || (paneIdsByWs[wid] || []).length > 0;
     if (!dryRun) {
       report(wid, String(count));
-      if (AUTO_OPEN) autoOpenTodoPane(wid, root, count, active, state, paneIdsByWs);
+      if (AUTO_OPEN) autoOpenTodoTabs(wid, root, active, state, paneIdsByWs);
     } else {
       console.log(`${wid}\t${label}\t${root}`);
       console.log(`         open=${count}  active=${active ? "yes" : "no"} (agent=${hasAgent ? "yes" : "no"})  ->  todos_open=${count > 0 ? count + " todos" : ""}`);
@@ -281,28 +318,44 @@ function poll(dryRun) {
   return 0;
 }
 
-// Drive the todo pane from Herdr activity + open todos:
-//   - open/keep it when a workspace is active (an agent is running there, or it
-//     simply has panes open — manual opencode/grok/cline launches count) AND
-//     the project has open todos;
-//   - close it when the todos reach 0 (regardless of activity);
-//   - never open one for an inactive workspace (no panes at all), and don't
-//     yank an already-open pane when the agent merely goes idle (it stays
-//     until the work is done). `state` maps workspace_id -> pane_id (persisted
-//     across polls).
-function autoOpenTodoPane(wid, root, count, active, state, paneIdsByWs) {
-  const existing = state[wid];
-  if (!existing && !active) return; // inactive + no pane => nothing to do
-  if (count === 0 && existing) {
-    // No open todos left — close the pane we opened for this workspace.
-    closeTodoPane(existing);
-    delete state[wid];
-    return;
+// Drive the todo tabs from Herdr activity:
+//   - open/keep one todo tab per present todo file (TODO.md / TODOS.md) when a
+//     workspace is active (an agent is running there, or it simply has panes
+//     open — manual opencode/grok/cline launches count);
+//   - the tab STAYS OPEN even when the project has 0 open todos (the todo file
+//     is important, not just when non-empty);
+//   - never open a tab for an inactive workspace (no panes at all), and don't
+//     yank an already-open tab when the agent merely goes idle;
+//   - close a tab only when its todo file has been deleted from the root.
+//   `state` maps workspace_id -> { basename(file) -> { tab_id, pane_id } }
+//   (persisted across polls).
+function autoOpenTodoTabs(wid, root, active, state, paneIdsByWs) {
+  if (!active) return; // inactive workspace: keep open but don't open new tabs
+  const files = todoFilesFor(root);
+  if (!files.length) return;
+  const per = state[wid] || (state[wid] = {});
+  const live = paneIdsByWs[wid] || [];
+  for (const file of files) {
+    const key = basename(file);
+    let existing = per[key];
+    if (existing && live.includes(existing.pane_id)) continue; // already showing
+    // Fall back to matching by tab label so we never duplicate after state loss.
+    existing = findTodoTab(wid, file);
+    if (existing?.pane_id && live.includes(existing.pane_id)) {
+      per[key] = existing;
+      continue;
+    }
+    const opened = openTodoTab(wid, root, file);
+    if (opened) per[key] = { tab_id: opened.tab_id, pane_id: opened.pane_id };
   }
-  if (!active) return; // workspace inactive, todos remain: keep, don't open new
-  if (count > 0 && existing && (paneIdsByWs[wid] || []).includes(existing)) return;
-  const pid = openTodoPane(wid, root);
-  if (pid) state[wid] = pid;
+  // Cleanup: close a tab whose todo file has been deleted from the root.
+  for (const key of Object.keys(per)) {
+    const stillExists = files.some((f) => basename(f) === key);
+    if (!stillExists && per[key] && live.includes(per[key].pane_id)) {
+      closeTodoTab(per[key]);
+      delete per[key];
+    }
+  }
 }
 
 // ---- config.toml token wiring --------------------------------------------------
@@ -599,96 +652,88 @@ function cmdStatus() {
   return lines.join("\n");
 }
 
-// Pick a shell pane on the workspace's first tab to split from.
-// Prefers non-owned panes so we don't nest inside an existing todo pane.
-function firstTabSplitTarget(wsId, ownedPaneId) {
-  const tabs = (() => {
-    const args = [herdrBin(), "tab", "list"];
-    if (wsId) args.push("--workspace", wsId);
-    const r = run(args);
-    if (r.code !== 0) return [];
-    try {
-      return JSON.parse(r.stdout)?.result?.tabs || [];
-    } catch {
-      return [];
-    }
-  })();
-  // First tab = lowest number, fallback first entry.
-  const sorted = [...tabs].sort((a, b) => (a.number ?? 999) - (b.number ?? 999));
-  const firstTabId = sorted[0]?.tab_id || null;
-
-  const r = run([herdrBin(), "pane", "list"]);
-  if (r.code !== 0) return null;
-  let panes = [];
-  try {
-    panes = JSON.parse(r.stdout)?.result?.panes || [];
-  } catch {
-    return null;
-  }
-  const inWs = panes.filter((p) => p.workspace_id === wsId);
-  const onFirst = firstTabId
-    ? inWs.filter((p) => p.tab_id === firstTabId)
-    : inWs;
-  const pool = onFirst.length ? onFirst : inWs;
-  const hit =
-    pool.find((p) => p.pane_id !== ownedPaneId && p.label !== TODO_PANE_TITLE) ||
-    pool.find((p) => p.pane_id !== ownedPaneId) ||
-    pool[0];
-  return hit?.pane_id || null;
+// Tab label for a todo file — used consistently for tab-name dedup.
+function todoTabLabel(file) {
+  return `todos · ${basename(file)}`;
 }
 
-// Open a plugin-owned todo pane (Herdr-managed split on the first tab).
-// Returns pane id or null. Keeps the pane out of the agent-start pool.
-// With `file` (absolute), the pane renders that file instead of the
-// workspace's TODOS.md/TODO.md (passed to the watch script via $TODOS_FILE).
-function openTodoPane(wsId, dir, file) {
-  const state = readState();
-  const owned = state[wsId];
-  // Already have a live owned pane? (Skip the dedup when rendering a specific
-  // file — that pane shows the project's TODOS.md, not the requested file.)
-  if (owned && !file) {
-    const ids = paneIdsByWorkspace()[wsId] || [];
-    if (ids.includes(owned)) {
-      run([herdrBin(), "plugin", "pane", "focus", owned], { timeout: 3000 });
-      return owned;
-    }
-  }
-
-  const target = firstTabSplitTarget(wsId, owned);
-  if (!target) return null;
-
-  const args = [
-    herdrBin(), "plugin", "pane", "open",
-    "--plugin", PLUGIN_ID,
-    "--entrypoint", PANE_ENTRYPOINT,
-    "--placement", "split",
-    "--direction", "right",
-    "--target-pane", target,
-    "--cwd", dir,
-    "--no-focus",
-  ];
-  if (file) args.push("--env", `TODOS_FILE=${file}`);
-  if (wsId) args.push("--workspace", wsId);
-  const opened = run(args, { timeout: 10000 });
-  if (opened.code !== 0) {
-    return openTodoPaneFallback(target, dir, file);
-  }
-  let paneId = null;
+// Look up an already-open todo tab for a given file by its label. Returns
+// { tab_id, pane_id } (pane_id = any live pane on that tab) or null. Used so
+// auto-open stays idempotent even if persisted state is stale or lost.
+function findTodoTab(wsId, file) {
+  const label = todoTabLabel(file);
+  const t = run([
+    herdrBin(), "tab", "list",
+    ...(wsId ? ["--workspace", wsId] : []),
+  ], { timeout: 8000 });
+  if (t.code !== 0) return null;
+  let tabId = null;
   try {
-    const data = JSON.parse(opened.stdout);
-    const pane = data?.result?.plugin_pane?.pane || data?.result?.pane || data?.result;
-    paneId = pane?.pane_id || data?.result?.pane_id || null;
-  } catch {
-    paneId = null;
+    tabId = JSON.parse(t.stdout)?.result?.tabs?.find((x) => x.label === label)?.tab_id || null;
+  } catch {}
+  if (!tabId) return null;
+  const p = run([herdrBin(), "pane", "list"], { timeout: 8000 });
+  try {
+    const pane = JSON.parse(p.stdout)?.result?.panes?.find((x) => x.tab_id === tabId);
+    if (pane) return { tab_id: tabId, pane_id: pane.pane_id };
+  } catch {}
+  return { tab_id: tabId, pane_id: null };
+}
+
+// Ensure a todo tab for a given file is open (dedup by live state, then by tab
+// label for idempotency). Records { tab_id, pane_id } into `per`. Returns the
+// existing or newly created { tab_id, pane_id } record (or zero if it was a
+// label-matched tab with no live pane recorded yet).
+function openTodoTabFor(wsId, dir, file, per) {
+  const key = basename(file);
+  const live = (paneIdsByWorkspace()[wsId] || []);
+  let existing = per?.[key];
+  if (existing && live.includes(existing.pane_id)) return existing;
+  existing = findTodoTab(wsId, file);
+  if (existing?.pane_id && live.includes(existing.pane_id)) {
+    if (per) per[key] = existing;
+    return existing;
   }
-  if (paneId) markTodoPaneDisplay(paneId);
-  return paneId;
+  const opened = openTodoTab(wsId, dir, file);
+  if (opened && per) per[key] = opened;
+  return opened;
+}
+
+// Open a dedicated todo TAB for one specific todo file.
+// Returns { tab_id, pane_id } (the root pane running the live watcher) or null.
+// The tab is display-only: `herdr agent start` on it refuses (display-agent).
+// The rendered file is passed explicitly so TODO.md and TODOS.md each own a tab.
+function openTodoTab(wsId, dir, file) {
+  const created = run([
+    herdrBin(), "tab", "create",
+    ...(wsId ? ["--workspace", wsId] : []),
+    "--cwd", dir,
+    "--label", todoTabLabel(file),
+    "--no-focus",
+  ], { timeout: 10000 });
+  if (created.code !== 0) return null;
+  let tabId = null, rootPaneId = null;
+  try {
+    const data = JSON.parse(created.stdout)?.result || {};
+    tabId = data?.tab?.tab_id || null;
+    rootPaneId = data?.root_pane?.pane_id || null;
+  } catch {}
+  if (!tabId || !rootPaneId) return null;
+
+  const watch = join(__dirname, "todo-watch.mjs");
+  const paneRun = run([herdrBin(), "pane", "run", rootPaneId, `node ${watch} 4 --file ${file}`], { timeout: 5000 });
+  if (paneRun.code !== 0) {
+    run([herdrBin(), "tab", "close", tabId], { timeout: 5000 });
+    return null;
+  }
+  markTodoTabDisplay(rootPaneId);
+  return { tab_id: tabId, pane_id: rootPaneId };
 }
 
 // Mark the live list as a display surface so the UI (and agents) don't treat
 // it as a free shell. `herdr agent start` on it still returns agent_pane_busy
 // by design — the pane is running todo-watch, not an interactive shell.
-function markTodoPaneDisplay(paneId) {
+function markTodoTabDisplay(paneId) {
   run([
     herdrBin(), "pane", "report-metadata", paneId,
     "--source", SOURCE,
@@ -698,36 +743,25 @@ function markTodoPaneDisplay(paneId) {
   ], { timeout: 3000 });
 }
 
-// Legacy path: split a shell pane and run todo-watch inside it.
-function openTodoPaneFallback(target, dir, file) {
-  const split = run([
-    herdrBin(), "pane", "split", target, "--direction", "right",
-    "--cwd", dir, "--no-focus",
-  ]);
-  if (split.code !== 0) return null;
-  let paneId = null;
-  try {
-    paneId = JSON.parse(split.stdout)?.result?.pane?.pane_id;
-  } catch {}
-  if (!paneId) return null;
-  const watch = join(__dirname, "todo-watch.mjs");
-  const args = [herdrBin(), "pane", "run", paneId, "node", watch, "4"];
-  if (file) args.push("--file", file);
-  const paneRun = run(args, { timeout: 5000 });
-  if (paneRun.code !== 0) return null;
-  markTodoPaneDisplay(paneId);
-  return paneId;
-}
-
-function closeTodoPane(paneId) {
-  const plug = run([herdrBin(), "plugin", "pane", "close", paneId], { timeout: 5000 });
-  if (plug.code === 0) return;
-  run([herdrBin(), "pane", "close", paneId], { timeout: 5000 });
+// Close the todo tab recorded for a file (rec = { tab_id, pane_id }), falling
+// back to resolving the owning tab from the pane if no tab_id was stored.
+function closeTodoTab(rec) {
+  const pid = typeof rec === "object" && rec !== null ? rec.pane_id : rec;
+  let tabId = typeof rec === "object" && rec !== null ? rec.tab_id : null;
+  if (!tabId && pid) {
+    const r = run([herdrBin(), "pane", "get", pid], { timeout: 5000 });
+    try {
+      tabId = JSON.parse(r.stdout)?.result?.pane?.tab_id || null;
+    } catch {}
+  }
+  if (tabId) run([herdrBin(), "tab", "close", tabId], { timeout: 5000 });
+  else if (pid) run([herdrBin(), "pane", "close", pid], { timeout: 5000 });
 }
 
 function cmdOpen(args) {
-  // `open <text>` reopens a done task via the engine; bare `open` opens the pane.
-  // `open --file <path>` opens the pane rendering that file (e.g. example.md).
+  // `open <text>` reopens a done task via the engine; bare `open` opens todo
+  // tabs (one per present todo file). `open --file <path>` opens a tab
+  // rendering that file (e.g. example.md).
   let fileTarget = null;
   if (args[0] === "--file") {
     fileTarget = args[1] || "";
@@ -745,28 +779,34 @@ function cmdOpen(args) {
   const cwdMap = paneCwds();
   const root = focused ? gitDirFor(focused, cwdMap) : process.cwd();
   const dir = root || process.cwd();
+  const wid = focused?.workspace_id;
 
-  let file = null;
+  const state = readState();
+  const per = wid ? (state[wid] ||= {}) : {};
+
   if (fileTarget) {
-    file = fileTarget.startsWith("/") ? fileTarget : join(dir, fileTarget);
+    const file = fileTarget.startsWith("/") ? fileTarget : join(dir, fileTarget);
     if (!existsSync(file)) return `no such file: ${file}`;
-  } else if (!todosFileFor(dir)) {
-    return `no TODOS.md or TODO.md in ${dir} — run: todo init`;
+    const opened = openTodoTabFor(wid, dir, file, per);
+    if (!opened?.pane_id) return `failed to open todo tab for ${basename(file)}`;
+    if (wid) writeState(state);
+    return `opened ${basename(file)} tab ${opened.pane_id} (live, refreshes every ${INTERVAL_S}s)`;
   }
 
-  const paneId = openTodoPane(focused?.workspace_id, dir, file);
-  if (!paneId) return "failed to open todo pane";
-  // Remember it so auto-open does not duplicate, and auto-close can find it.
-  if (focused?.workspace_id) {
-    const state = readState();
-    state[focused.workspace_id] = paneId;
-    writeState(state);
+  const files = todoFilesFor(dir);
+  if (!files.length) return `no TODOS.md or TODO.md in ${dir} — run: todo init`;
+
+  const openedIds = [];
+  for (const file of files) {
+    const opened = openTodoTabFor(wid, dir, file, per);
+    if (opened?.pane_id) openedIds.push(`${basename(file)}:${opened.pane_id}`);
   }
-  const label = file ? basename(file) : "todo list";
-  return `opened ${label} pane ${paneId} (live split on first tab, refreshes every 4s)`;
+  if (wid) writeState(state);
+  if (!openedIds.length) return "failed to open todo tab(s)";
+  return `opened ${openedIds.length} todo tab(s): ${openedIds.join(", ")} (live, refreshes every ${INTERVAL_S}s)`;
 }
 
-// `pane` — always opens the live todo pane ("--file <path>" renders that file).
+// `pane` — always opens the live todo tab(s) ("--file <path>" renders that file).
 // Unlike bare `open <text>` (engine reopen) this never touches task state.
 function cmdPane(args) {
   if (args.length > 0 && args[0] === "--file") {
@@ -937,9 +977,9 @@ Herdr plugin commands:
   poller-status  show poller state + per-workspace open counts
   once           poll once and report tokens
   loop           poll forever (keep-alive entry)
-  open           open a live right-hand pane listing todos (first tab)
-  open --file    same, but render the given file (e.g. example.md) instead of TODOS.md
-  pane           open the live todo pane (alias for bare open); pane --file <path> renders that file
+  open              open a live todo TAB per present todo file (TODO.md / TODOS.md)
+  open --file        open a tab rendering the given file (e.g. example.md)
+  pane              open the live todo tab(s) (alias for bare open); pane --file <path> renders that file
 
 Adapter commands:
   adapters list|install    show/install per-agent /todo adapters

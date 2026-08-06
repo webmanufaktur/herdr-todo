@@ -3,7 +3,7 @@
 // Usage: node todo-watch.mjs [interval_s] [--all] [--density m] [--color m]
 //                          [--ascii] [--plain] [--file PATH]   (PATH or $TODOS_FILE)
 //
-// Payload for `todo open` (Herdr right-hand pane on the first tab). Renders via todo-ui.mjs
+// Payload for `todo open` (a dedicated Herdr TODO tab per present todo file).
 // on file changes (fs.watch) with a periodic safety fallback. Renders into the
 // NORMAL screen buffer (no alternate screen), so the pane scrolls naturally via
 // the terminal's own scrollback and never shows buffer garbage while scrolling.

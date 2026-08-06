@@ -5,7 +5,8 @@ description: >
   execution). Write implementation plans to .plans/, drive all
   TODOS.md/TODO.md changes through the `todo` engine (never hand-edit), and
   open ANY new agent surface as a NEW HERDR TAB — never a pane split; the live
-  todo list is the one sanctioned right-hand split on the first tab. Use when
+  todo list lives in its own dedicated TAB per todo file (TODO.md / TODOS.md),
+  staying open even with 0 open tasks. Use when
   planning a task, adding/completing/reopening todos, or handing work to
   another agent (grok executes, glm plans).
 metadata:
@@ -22,8 +23,8 @@ Applies to every pi session on this machine (planner `zai/glm-5.2`, executor
    `.plans/visual-todo.md`.
 2. **Todos → `todo` engine, always.** Never hand-edit task lines in
    `TODOS.md`/`TODO.md` (fallback below only when the engine is unreachable).
-3. **Agents → new tab, never a split.** The todo list is the one allowed
-   right-hand split, on the first tab.
+3. **Agents → new tab, never a split.** The todo list is a dedicated TAB per
+   todo file, not a pane split.
 
 ## When this loads
 
@@ -62,7 +63,7 @@ Plans are git-committed artifacts like `TODOS.md`.
 | `todo open <text>` | Reopen a done task (strips `t:`) |
 | `todo next` | Top-priority open task |
 | `todo count` | Number of open tasks (scripts/sidebar) |
-| `todo pane` | Open the live todo pane (delegates to the herdr-todo plugin) |
+| `todo pane` | Open the live todo tab(s) — one per present todo file (delegates to the herdr-todo plugin) |
 
 File format: `## GROUPNAME` groups → `### FEATURENAME` buckets (any name;
 `### BACKLOG` is a common one for uncategorized ideas) → `- [ ]`/`- [x]` task
@@ -94,11 +95,12 @@ Never leave an open checkbox with a `t:` stamp. Then restore the engine:
 - **Never split a pane to host an agent.** This overrides herdr's own default
   (`herdr pane split --current --direction right` then `agent start`). The
   todo skill's tab rule wins on this machine.
-- **The live todo list is the ONE sanctioned split** — right-hand pane on the
-  FIRST tab, owned by the herdr-todo plugin, display-only. `agent start` on it
-  returns `agent_pane_busy` — that is by design. Open it with `todo pane`.
-- Keep the first tab for your interactive shell + the todo split; agents get
-  their own tabs. Never hardcode a pane number (the layout is semantic).
+- **The todo list is its own dedicated TAB** per present todo file
+  (`todo open` / `todo pane`). `TODO.md` and `TODOS.md` each get a tab when
+  both exist; the tab stays open even with 0 open tasks. Each tab is
+  display-only (`agent start` on it returns `agent_pane_busy` — by design).
+- Keep the first tab for your interactive shell + your working agent tabs;
+  never hardcode a pane or tab number (the layout is semantic).
 
 ## Delegate routing
 

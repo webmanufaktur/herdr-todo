@@ -2,13 +2,13 @@
 
 Portable todo tracking for coding agents — a `TODOS.md` file (todo.txt markup)
 shared across every agent, a Herdr sidebar count next to your branch, and a
-right-hand pane listing open todos on the first tab.
+dedicated **todo tab** per present todo file (stays open even with 0 open tasks).
 
 The file is the interface, not the agent: **any** agent (pi, Claude Code,
 OpenCode, Cline, Grok, …) or a human with a text editor can work with the same
 todo file. The engine and plugin are thin layers over it. Discovery accepts
-`TODOS.md` or `TODO.md` (preferring `TODOS.md` when both exist); `todo init`
-still creates `TODOS.md`.
+`TODOS.md` and `TODO.md` — **both are important** and each gets its own tab,
+so both exist side-by-side (not "prefer one"). `todo init` still creates `TODOS.md`.
 
 ```
  master  ~5 +2  ↑        ← branch · changed · untracked · git_status
@@ -21,9 +21,9 @@ still creates `TODOS.md`.
 |---|---|
 | **Portable todo file** | `TODOS.md` (or `TODO.md`) at project root, todo.txt markup, git-committed |
 | **One engine, all agents** | `todo` — zero-dependency node script (`todo.mjs`) |
-| **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` |
-| **Auto-open a todo pane** | when a workspace is **active** — an agent is running there (any Herdr-detected kind: pi, opencode, grok, cline, …) or it simply has panes open (covers manual agent launches) — and the project has open todos, the poller opens a right-hand pane on the first tab with a **live** `todo list` (refreshes every few seconds); it closes again when all todos are done |
-| **Open a todo pane** | `todo open` (or `<leader>t` in OpenCode) → right-hand pane on the first tab with a **live** `todo list` that refreshes every few seconds |
+| **Sidebar count** | `herdr-todo` plugin polls each workspace, reports `$todos_open` (sums across both files) |
+| **Auto-open todo tabs** | when a workspace is **active** — an agent is running there (any Herdr-detected kind: pi, opencode, grok, cline, …) or it simply has panes open (covers manual agent launches) — the poller opens a dedicated **todo tab** per present todo file with a **live** `todo list` (refreshes every few seconds). The tab stays open even when all todos are done |
+| **Open a todo tab** | `todo open` (or `<leader>t` in OpenCode) → a dedicated **todo tab** per present todo file with a **live** `todo list` that refreshes every few seconds |
 | **`/todo` in your agent** | per-agent adapters (pi, OpenCode, Cline, Grok) |
 
 ## Quick start
@@ -61,7 +61,7 @@ re-run `update`.
 
 After `setup`, the engine is on PATH as `todo` (`~/.local/bin/todo`). You can
 also call it via the plugin launcher (`~/.config/herdr/herdr-todo <cmd>`), which
-proxies engine commands and owns the plugin-only ones (`open` pane, `setup`, …).
+proxies engine commands and owns the plugin-only ones (`open` tab, `setup`, …).
 
 ```
 todo list [flags]            List open tasks (styled in a TTY; flat when piped)
@@ -72,7 +72,7 @@ todo open <text>             Reopen a done task (strips t:)
 todo next                    Top-priority open task
 todo init                    Create a TODOS.md in cwd
 todo count                   Number of open tasks (for scripts/sidebar)
-todo pane [--file PATH]      Open the live todo pane (delegates to the
+todo pane [--file PATH]      Open the live todo tab(s) (delegates to the
                              herdr-todo plugin; --file renders that file)
 ```
 
@@ -102,10 +102,10 @@ Other display flags:
 - `--density compact|normal|relaxed` — spacing; default `normal`, auto-`compact` when the terminal is under 60 columns (unless you pass `--density` explicitly)
 - Priority `(A)` rows are bold; overdue `due:` tokens go red (or get a trailing `!` when color is off)
 
-The live pane (`todo open` / `todo-watch.mjs`) uses the same renderer in-process.
+The live tab (`todo open` / `todo-watch.mjs`) uses the same renderer in-process.
 It renders into the **normal screen buffer** — not the alternate screen — so the
 pane scrolls natively in the terminal's scrollback, and repaints only when the
-list actually changes (fs.watch + a periodic no-op check), so a quiet pane does
+list actually changes (fs.watch + a periodic no-op check), so a quiet tab does
 not spam scrollback with copies.
 
 Two-level files (`## GROUPNAME` → `### FEATURENAME` buckets) render the group name as a bold header line with **one card per feature bucket** beneath it; a group without `###` buckets keeps a single card titled with the group name (old behavior).
@@ -125,21 +125,22 @@ engine run stays consistent:
 Never leave an open checkbox with a `t:` stamp. Restore the engine with
 `herdr plugin action invoke herdr-todo.setup`.
 
-## Live todo pane
+## Live todo tab
 
 `herdr-todo open` (or the plugin action / OpenCode `<leader>t`) opens a
-**plugin-owned** right-hand pane on the first tab running `todo-watch.mjs`, which
-re-renders the todo list every few seconds. Plugin panes are display surfaces
-managed by Herdr — they are not interactive shells, so `herdr agent start`
-correctly refuses them (`agent_pane_busy`) instead of hijacking the live list.
+**dedicated tab** per present todo file running `todo-watch.mjs`, which
+re-renders the todo list every few seconds. `TODO.md` and `TODOS.md` each get
+their **own tab** when both exist. Each tab is display-only — it is not an
+interactive shell, so `herdr agent start` correctly refuses it
+(`agent_pane_busy`) instead of hijacking the live list.
 
 Add/complete tasks in `TODOS.md` / `TODO.md` (anywhere — the engine, an agent,
-or your editor) and the pane updates automatically.
+or your editor) and the tab updates automatically.
 
 Render any file, not just the project's todo file — e.g. a template or example:
 
 ```bash
-herdr-todo open --file example.md           # pane renders example.md (live)
+herdr-todo open --file example.md           # tab renders example.md (live)
 herdr-todo open --file /abs/path/example.md # absolute path also works
 node todo-watch.mjs 4 --file example.md     # direct in any shell pane
 ```
@@ -148,27 +149,29 @@ node todo-watch.mjs 4 --file example.md     # direct in any shell pane
 
 ### Auto-open (default on)
 
-By default the poller **auto-opens** a todo pane for any **active** workspace
-that has open todos — and closes it again when all of that workspace's todos
-are done. "Active" is read from Herdr's **own** registry, in two layers:
+By default the poller **auto-opens** a todo tab for any **active** workspace
+(one per present todo file) — and the tab **stays open even when all of that
+workspace's todos are done** (the todo file is important, not just when it's
+non-empty). "Active" is read from Herdr's **own** registry, in two layers:
 
 - an **agent is running** there (`herdr agent list` / per-workspace
   `agent_status`) — works for every agent kind Herdr recognizes: pi,
   opencode, grok, cline, codex, …; or
 - the workspace simply **has panes open** — this also covers agents launched
   by hand in a shell that Herdr can't yet classify (manual opencode/grok/cline
-  runs), so their todo pane opens too, with no agent-specific wiring.
+  runs), so their todo tabs open too, with no agent-specific wiring.
 
-It never duplicates a pane that's already showing the todos, and tracks which
-panes it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
+It never duplicates a tab that's already showing a given file, and tracks which
+tabs it opened in `~/.config/herdr/herdr-todo-state.json`. Disable it with
 `HERDR_TODO_AUTO_OPEN=0` in the keep-alive environment.
 
 Lifecycle details:
 
-- A workspace with open todos but **no panes at all** (not attached/visible)
-  gets no pane.
-- Once open, a pane stays until its todos are done even if the agent exits —
-  and reopens automatically while the agent is running again.
+- A workspace with todo files but **no panes at all** (not attached/visible)
+  gets no tab.
+- Once open, a tab stays — even when its todos hit 0 — and reopens
+automatically if it is closed while the agent keeps running.
+- If a todo file is **deleted** from the repo root, its tab is closed.
 
 Bonus: `herdr integration install pi|opencode|grok` (done by `adapters install`)
 lets Herdr recognize those agents even when launched in a plain shell. Cline
@@ -218,8 +221,8 @@ and is the canonical template:
 | `node herdr-todo.mjs teardown` | stop poller + remove token (reversible) |
 | `node herdr-todo.mjs poller-status` | show poller state + per-workspace open counts |
 | `node herdr-todo.mjs once` | poll once and report tokens |
-| `node herdr-todo.mjs open` | open a right-hand **plugin** pane listing todos |
-| `node herdr-todo.mjs pane` | alias for `open` — opens the live todo pane; `pane --file <path>` renders that file |
+| `node herdr-todo.mjs open` | open a todo **tab** per present todo file (live) |
+| `node herdr-todo.mjs pane` | alias for `open` — opens the live todo tab(s); `pane --file <path>` renders that file |
 | `node herdr-todo.mjs adapters list\|install` | show/install per-agent `/todo` adapters |
 
 ## Layout
@@ -230,7 +233,7 @@ herdr-todo/
 ├── todo.mjs                 # the engine (CLI + importable module)
 ├── todo-ui.mjs              # pure ANSI list renderer (zero I/O; used by list + watch)
 ├── todo                     # shell launcher → node todo.mjs
-├── todo-watch.mjs           # live-updating todo pane (the `todo open` payload)
+├── todo-watch.mjs           # live-updating todo tab (the `todo open` payload)
 ├── herdr-todo.mjs           # Herdr plugin engine (poller + setup/teardown + adapters)
 ├── example.md               # canonical two-level todo template (## group → ### features)
 ├── test.mjs                 # engine test suite
