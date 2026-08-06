@@ -3,12 +3,13 @@
 //
 // As a Herdr plugin it mirrors herdr-changed:
 //   - polls each workspace's TODOS.md/TODO.md and reports a `$todos_open` sidebar token
-//   - when a workspace is active (any agent running — pi, opencode, grok,
-//     cline, … — or simply has panes open), opens a dedicated TODO TAB for
-//     each present todo file (TODO.md and TODOS.md each get their own tab);
-//     the tab stays open even when the todos hit 0
+//   - when a workspace is active (any agent running — pi, opencode, cline,
+//     grok, kilo, droid, … — or simply has panes open), opens a dedicated
+//     TODO TAB for each present todo file (TODO.md and TODOS.md each get their
+//     own tab); the tab stays open even when the todos hit 0
 //   - `setup`/`teardown` wire the sidebar token + install a keep-alive poller
-//   - `adapters` installs the per-agent /todo adapters (pi/opencode/cline/grok)
+//   - `adapters` installs the per-agent /todo adapters
+//     (pi/opencode/cline/grok/kilo/droid)
 //
 // The engine itself lives in todo.mjs (imported here for counting).
 
@@ -44,15 +45,16 @@ const TODO_PANE_TITLE = "todo";
 
 // Auto-open toggle: when set, the poller opens a dedicated todo TAB (one per
 // present todo file) for any active workspace — one with an agent running
-// (**any** Herdr-detected kind: pi, opencode, grok, cline, codex, …) or simply
-// with panes open (covers manual agent launches Herdr can't yet detect). The
-// tab stays open even when the todos reach 0. Driven by Herdr's own
+// (**any** Herdr-detected kind: pi, opencode, cline, grok, kilo, droid, …) or
+// simply with panes open (covers manual agent launches Herdr can't yet detect).
+// The tab stays open even when the todos reach 0. Driven by Herdr's own
 // workspace/agent registry, not by any one agent's extension.
 const AUTO_OPEN = (process.env.HERDR_TODO_AUTO_OPEN ?? "1") !== "0";
 
 // Poll health: while the Herdr server is unreachable we back off and log at
 // most once per outage, so a long outage never spams the keep-alive log and
-// the poller self-heals the moment the server returns (no pi self-heal needed).
+// the poller self-heals the moment the server returns (no per-agent
+// self-heal needed — the keep-alive itself does the healing).
 const INTERVAL_S = Number(process.env.HERDR_TODO_INTERVAL || 4);
 const UNREACHABLE_BACKOFF_S = 30; // poll this often while the server is down
 const UNREACHABLE_THRESHOLD = 3; // consecutive failures before backing off
@@ -241,7 +243,8 @@ const PRESENT_AGENT_STATUS = new Set(["idle", "working", "blocked", "done"]);
 
 // Map workspace_id -> [agent, ...] from `herdr agent list` (Herdr's own registry
 // of recognized agents). This is the authoritative, agent-agnostic source of
-// "an agent is running here" — it covers pi, opencode, grok, cline, codex, …
+// "an agent is running here" — it covers pi, opencode, cline, grok, kilo,
+// droid, …
 function agentsByWorkspace() {
   const r = run([herdrBin(), "agent", "list"]);
   if (r.code !== 0) return {};
@@ -302,7 +305,7 @@ function poll(dryRun) {
     const hasAgent = agentRunning(w, agentsByWs);
     // A workspace is "active" when an agent is running there OR it simply has
     // panes open — the latter covers agents Herdr can't (yet) detect (manual
-    // opencode/grok/cline launches), so the todo pane opens for them too.
+    // launches of any agent), so the todo pane opens for them too.
     const active = hasAgent || (paneIdsByWs[wid] || []).length > 0;
     if (!dryRun) {
       report(wid, String(count));
@@ -321,7 +324,7 @@ function poll(dryRun) {
 // Drive the todo tabs from Herdr activity:
 //   - open/keep one todo tab per present todo file (TODO.md / TODOS.md) when a
 //     workspace is active (an agent is running there, or it simply has panes
-//     open — manual opencode/grok/cline launches count);
+//     open — manual launches of any agent count);
 //   - the tab STAYS OPEN even when the project has 0 open todos (the todo file
 //     is important, not just when non-empty);
 //   - never open a tab for an inactive workspace (no panes at all), and don't
@@ -406,6 +409,25 @@ function chmodX(path) {
     const p = spawnSync("chmod", ["+x", path]);
     if (p.status !== 0) console.error("warning: could not chmod " + path);
   } catch {}
+}
+
+// Copy `src` → `dst` only when content differs (or dst is missing). Returns
+// true when it actually wrote, false otherwise (unchanged, or a per-target
+// failure like a dangling symlink — swallowed so one bad target never aborts
+// the startup sync). Used by `cmdSync` so a quiet boot doesn't churn mtimes
+// or relog on every Herdr start.
+function copyIfChanged(src, dst) {
+  try {
+    let prev = "";
+    try { prev = readFileSync(dst, "utf8"); } catch {}
+    const next = readFileSync(src, "utf8");
+    if (prev === next) return false;
+    mkdirSync(dirname(dst), { recursive: true });
+    copyFileSync(src, dst);
+    return true;
+  } catch {
+    return false; // per-target failure: don't abort the sync
+  }
 }
 
 function writeLauncher() {
@@ -548,6 +570,68 @@ function cmdSetup() {
   // report once so sidebar populates immediately
   poll(false);
   return `setup done:\n  ${res.note}\n  launcher: ${LAUNCHER}\n  ${pathNote}\n  ${ka}`;
+}
+
+// Lightweight, idempotent restore run at Herdr startup ([[startup]] hook) and
+// available as `herdr-todo sync`. Everything here is safe to re-run and tolerates
+// a missing/offline/dirty state silently — a boot must never fail noisily. It is
+// the cheap subset of `setup` + `adapters install`: no git pull, no package-
+// manager installs, no `herdr integration install`. For a full refresh run
+// `herdr-todo update`.
+//
+//   - restore sidebar tokens (no backup — setup took the one-time backup)
+//   - rewrite the launcher + `todo` on PATH (idempotent)
+//   - ensure the keep-alive poller is registered (idempotent; reload is a no-op
+//     when already loaded, restarts it with the current engine otherwise)
+//   - re-copy the shared + planning skill .md files (plain copies; skipped when
+//     unchanged) so adapters track the installed plugin source
+//   - poll once so the sidebar populates immediately
+function cmdSync() {
+  const out = [];
+  const note = (s) => out.push(s);
+  // Wrap each step so one failure doesn't abort the rest of the boot.
+  const step = (label, fn) => {
+    try { note(`${label}: ${fn()}`); }
+    catch (e) { note(`${label}: skipped (${(e && e.message) || e})`); }
+  };
+
+  // 1. Sidebar tokens.
+  step("tokens", () => {
+    let text = existsSync(CONFIG) ? readConfig() : "";
+    const res = ensureTodosTokens(text);
+    if (res.text !== text) writeFileSync(CONFIG, res.text, "utf8");
+    return res.note;
+  });
+  // 2. Launcher + todo on PATH.
+  step("launcher", () => { writeLauncher(); return "ok"; });
+  step("path", () => installTodoOnPath());
+  // 3. Keep-alive: register/refresh (idempotent). installKeepAlive reloads the
+  //    plist/unit; a reload is a no-op when already loaded.
+  step("keep-alive", () => installKeepAlive());
+  // 4. Re-copy skill files (the cheap part of `adapters install`). No package
+  //    managers, no integration installs — those are explicit `update`. Each
+  //    target is independent — a dangling symlink under one mirror (e.g. ~/.pi)
+  //    is skipped, not fatal.
+  step("skills", () => {
+    const home = homedir();
+    const root = adaptersRoot();
+    let targets = 0, updated = 0;
+    const put = (srcFile, dstFile) => {
+      if (!existsSync(srcFile)) return;
+      targets += 1;
+      if (copyIfChanged(srcFile, dstFile)) updated += 1;
+    };
+    const src = join(root, "skill", "SKILL.md");
+    put(src, join(home, ".agents", "skills", "todo", "SKILL.md"));
+    put(src, join(home, ".grok", "skills", "todo", "SKILL.md"));
+    const plan = join(root, "planning", "SKILL.md");
+    put(plan, join(home, ".agents", "skills", "planning-todos", "SKILL.md"));
+    put(plan, join(home, ".pi", "agent", "skills", "planning-todos", "SKILL.md"));
+    return updated > 0 ? `${updated}/${targets} skill file(s) updated` : `current (${targets} targets)`;
+  });
+  // 5. Poll once so the sidebar reflects current state immediately.
+  step("poll", () => { poll(false); return "ok"; });
+  return `sync done:\n  ${out.join("\n  ")}`;
 }
 
 // Update the installed plugin: pull latest sources, rewire config/launcher,
@@ -823,79 +907,144 @@ function adaptersRoot() {
   return join(__dirname, "adapters");
 }
 
+// Adapter table — each entry is one agent. Adding/removing an agent is a
+// one-line change here; nothing else in this file is agent-specific.
+//   name     — display label + directory under adapters/
+//   dir      — source directory (existsSync check drives the "ok/missing" line)
+//   install  — best-effort install step; pushes status lines to `out`
+//   hint     — human hint shown by `adapters list` (where it lands / how)
+// The todo engine + sidebar + live tabs already work for EVERY agent (they're
+// driven by Herdr's own workspace/agent registry); these adapters only add a
+// `/todo` surface inside a specific agent.
+function adapterTable() {
+  const root = adaptersRoot();
+  const home = homedir();
+  return [
+    {
+      name: "pi",
+      dir: join(root, "pi"),
+      hint: "pi install " + join(root, "pi") + "  →  /todo",
+      install(out) {
+        if (!existsSync(this.dir)) { out.push("pi: missing source dir"); return; }
+        const r = run(["pi", "install", this.dir], { timeout: 30000 });
+        out.push(`pi: ${r.code === 0 ? "installed" : "install failed (run manually: pi install " + this.dir + ")"}`);
+      },
+    },
+    {
+      name: "opencode",
+      dir: join(root, "opencode"),
+      hint: "~/.config/opencode/commands/todo.md + ctrl+x t (opencode plugin tui-pkg --global)",
+      install(out) {
+        const src = join(this.dir, "todo.md");
+        if (!existsSync(src)) { out.push("opencode: missing source file"); return; }
+        const dst = join(home, ".config", "opencode", "commands");
+        mkdirSync(dst, { recursive: true });
+        copyFileSync(src, join(dst, "todo.md"));
+        out.push("opencode: slash command installed to ~/.config/opencode/commands/todo.md");
+        const tui = join(this.dir, "tui-pkg");
+        const r = run(["opencode", "plugin", tui, "--global"], { timeout: 30000 });
+        out.push(`opencode: tui plugin ${r.code === 0 ? "installed" : "install failed (run: opencode plugin " + tui + " --global)"}`);
+      },
+    },
+    {
+      // The shared Agent Skills-standard skill. It is the single source for
+      // every skill-loading agent — grok (mirrored to ~/.grok), kilo, pi, and
+      // any other tool that reads ~/.agents/skills/.
+      name: "todo skill (shared)",
+      dir: join(root, "skill"),
+      hint: "~/.agents/skills/todo/SKILL.md (cross-harness) + ~/.grok/skills/todo mirror",
+      install(out) {
+        const src = join(this.dir, "SKILL.md");
+        if (!existsSync(src)) { out.push("todo skill: missing source file"); return; }
+        // Canonical cross-harness location (Kilo, pi, any Agent-Skills tool).
+        const agDir = join(home, ".agents", "skills", "todo");
+        mkdirSync(agDir, { recursive: true });
+        copyFileSync(src, join(agDir, "SKILL.md"));
+        out.push("todo skill: installed to " + join(agDir, "SKILL.md") + " (covers kilo, pi, any Agent-Skills tool)");
+        // grok-specific mirror (grok reads ~/.grok/skills/).
+        const grokDir = join(home, ".grok", "skills", "todo");
+        mkdirSync(grokDir, { recursive: true });
+        copyFileSync(src, join(grokDir, "SKILL.md"));
+        out.push("todo skill: mirrored for grok to " + join(grokDir, "SKILL.md"));
+      },
+    },
+    {
+      name: "planning-todos skill",
+      dir: join(root, "planning"),
+      hint: "~/.agents/skills/planning-todos/SKILL.md (+ ~/.pi/agent/skills mirror)",
+      install(out) {
+        const src = join(this.dir, "SKILL.md");
+        if (!existsSync(src)) { out.push("planning-todos: missing source file"); return; }
+        // Canonical cross-harness location.
+        const agDir = join(home, ".agents", "skills", "planning-todos");
+        mkdirSync(agDir, { recursive: true });
+        const link = join(agDir, "SKILL.md");
+        try { rmSync(link); } catch {}
+        copyFileSync(src, link);
+        out.push("planning-todos: installed to " + link);
+        // pi mirror (pi loads ~/.pi/agent/skills).
+        try {
+          const piDir = join(home, ".pi", "agent", "skills", "planning-todos");
+          mkdirSync(piDir, { recursive: true });
+          copyFileSync(src, join(piDir, "SKILL.md"));
+          out.push("planning-todos: mirrored for pi to " + join(piDir, "SKILL.md"));
+        } catch {}
+      },
+    },
+    {
+      name: "cline",
+      dir: join(root, "cline"),
+      hint: "copy to .clinerules/todo.md (project-level)",
+      install(out) {
+        const src = join(this.dir, "todo.md");
+        if (!existsSync(src)) { out.push("cline: missing source file"); return; }
+        // Project-level: no global home to copy into. Point at the source.
+        out.push("cline: copy " + src + " to .clinerules/todo.md (project-level)");
+      },
+    },
+    {
+      // droid reads AGENTS.md / ~/.factory/AGENTS.md, not ~/.agents/skills/.
+      // It has no skill loader, so it drives todos purely via the `todo` engine
+      // on PATH (installed by setup). Listed so `adapters list` is exhaustive.
+      name: "droid",
+      dir: null,
+      hint: "no rules file — uses `todo` on PATH (installed by setup)",
+      install(out) {
+        out.push("droid: no skill/rules file (droid doesn't read ~/.agents/); uses `todo` on PATH");
+      },
+    },
+  ];
+}
+
 function cmdAdapters(args) {
   const sub = args[0];
   const root = adaptersRoot();
   if (!existsSync(root)) return "no adapters/ directory in this checkout";
-  const out = [];
+  const adapters = adapterTable();
 
   if (sub === "install") {
-    // pi — install the pi package (best-effort).
-    const piDir = join(root, "pi");
-    if (existsSync(piDir)) {
-      const r = run(["pi", "install", piDir], { timeout: 30000 });
-      out.push(`pi: ${r.code === 0 ? "installed" : "install failed (run manually: pi install " + piDir + ")"}`);
-    }
-    // opencode — copy slash command + install tui package.
-    const ocDir = join(homedir(), ".config", "opencode", "commands");
-    mkdirSync(ocDir, { recursive: true });
-    const ocSrc = join(root, "opencode", "todo.md");
-    if (existsSync(ocSrc)) {
-      copyFileSync(ocSrc, join(ocDir, "todo.md"));
-      out.push("opencode: slash command installed to ~/.config/opencode/commands/todo.md");
-      const tui = join(root, "opencode", "tui-pkg");
-      const r = run(["opencode", "plugin", tui, "--global"], { timeout: 30000 });
-      out.push(`opencode: tui plugin ${r.code === 0 ? "installed" : "install failed (run: opencode plugin " + tui + " --global)"}`);
-    }
-    // grok — copy skill.
-    const grokDir = join(homedir(), ".grok", "skills", "todo");
-    mkdirSync(grokDir, { recursive: true });
-    const grokSrc = join(root, "grok", "SKILL.md");
-    if (existsSync(grokSrc)) {
-      copyFileSync(grokSrc, join(grokDir, "SKILL.md"));
-      out.push("grok: skill installed to ~/.grok/skills/todo/SKILL.md");
-    }
-    // planning-todos — global pi skill (copy + optional cross-harness symlink).
-    const planSrc = join(root, "planning", "SKILL.md");
-    if (existsSync(planSrc)) {
-      const planDir = join(homedir(), ".pi", "agent", "skills", "planning-todos");
-      mkdirSync(planDir, { recursive: true });
-      copyFileSync(planSrc, join(planDir, "SKILL.md"));
-      out.push("planning-todos: pi skill installed to " + join(planDir, "SKILL.md"));
-      // Cross-harness discovery (pi loads ~/.agents/skills too; cheap mirror).
-      try {
-        const altDir = join(homedir(), ".agents", "skills", "planning-todos");
-        mkdirSync(altDir, { recursive: true });
-        const link = join(altDir, "SKILL.md");
-        try { rmSync(link); } catch {}
-        copyFileSync(planSrc, link);
-        out.push("planning-todos: mirrored to " + link);
-      } catch {}
-    }
+    const out = [];
+    for (const a of adapters) a.install(out);
+
     // Herdr agent-detection integrations — let Herdr recognize these agents in
     // plain shells so the todo pane auto-opens for them too (the plugin reads
     // `herdr agent list`, which is populated by these hooks / `agent start`).
-    for (const kind of ["pi", "opencode", "grok"]) {
+    // Best-effort: an unknown kind fails gracefully, and the poller's "panes
+    // open" fallback keeps detection working regardless.
+    for (const kind of ["pi", "opencode", "grok", "kilo", "droid"]) {
       const r = run([herdrBin(), "integration", "install", kind], { timeout: 30000 });
       out.push(`herdr: ${kind} detection ${r.code === 0 ? "integration installed/current" : "install failed (run manually: herdr integration install " + kind + ")"}`);
     }
     out.push("herdr: cline has no detection integration hook — start it with `herdr agent start --kind cline` so the todo pane auto-opens");
-    // cline — project-level rule (point to it).
-    out.push("cline: copy " + join(root, "cline", "todo.md") + " to .clinerules/todo.md (project-level)");
     return out.join("\n");
   }
 
   if (sub === "list") {
-    const entries = [
-      { name: "pi", dir: "pi", install: "pi install " + join(root, "pi") },
-      { name: "opencode", dir: "opencode", install: "copy " + join(root, "opencode/todo.md") + " to ~/.config/opencode/commands/todo.md, then opencode plugin " + join(root, "opencode/tui-pkg") + " --global" },
-      { name: "grok", dir: "grok", install: "copy " + join(root, "grok/SKILL.md") + " to ~/.grok/skills/todo/SKILL.md" },
-      { name: "planning-todos", dir: "planning", install: "copy " + join(root, "planning/SKILL.md") + " to ~/.pi/agent/skills/planning-todos/SKILL.md (+ ~/.agents/skills/planning-todos)" },
-      { name: "cline", dir: "cline", install: "copy " + join(root, "cline/todo.md") + " to .clinerules/todo.md (project-level)" },
-    ];
-    for (const e of entries) {
-      const present = existsSync(join(root, e.dir));
-      out.push(`${e.name}: ${present ? "ok" : "missing"}  ->  ${e.install}`);
+    const out = [];
+    for (const a of adapters) {
+      // A null dir (droid) is always "ok" — there's no source to ship.
+      const present = a.dir ? existsSync(a.dir) : true;
+      out.push(`${a.name}: ${present ? "ok" : "missing"}  ->  ${a.hint}`);
     }
     return out.join("\n");
   }
@@ -915,6 +1064,7 @@ function main() {
   }
   switch (cmd) {
     case "setup": console.log(cmdSetup()); break;
+    case "sync": console.log(cmdSync()); break;
     case "update": console.log(cmdUpdate()); break;
     case "teardown": console.log(cmdTeardown()); break;
     // poller-status: plugin/poller health (engine `status` is open counts)
@@ -972,6 +1122,8 @@ Engine commands (also available as \`todo\` on PATH after setup):
 
 Herdr plugin commands:
   setup          wire sidebar token + install keep-alive poller + PATH todo (backs up config)
+  sync           idempotent restore run at Herdr startup ([[startup]] hook): tokens, launcher,
+                 todo on PATH, keep-alive, skill files, one poll. No git pull / package installs.
   update         pull latest sources, re-setup, restart poller, reinstall adapters, reload plugin
   teardown       stop poller + remove token (reversible)
   poller-status  show poller state + per-workspace open counts

@@ -2,13 +2,25 @@ id = "herdr-todo"
 name = "Sidebar Todos"
 version = "0.1.1"
 min_herdr_version = "0.7.0"
-description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md or TODO.md), and when an agent is running in a workspace, open a dedicated TODO TAB per present todo file (TODO.md and TODOS.md each get their own tab). The tab stays open even when no open todos remain. Live, per-workspace, driven by Herdr's own agent registry (works for every agent kind), via a background poller (launchd on macOS, systemd on Linux)."
+description = "Show open todo count next to each branch in the Herdr sidebar (from each project's TODOS.md or TODO.md), and when an agent is running in a workspace, open a dedicated TODO TAB per present todo file (TODO.md and TODOS.md each get their own tab). The tab stays open even when no open todos remain. Live, per-workspace, driven by Herdr's own agent registry (works for every agent kind), via a background poller (launchd on macOS, systemd on Linux). On each Herdr start, a startup hook re-syncs the sidebar token, keep-alive poller, PATH `todo`, and the shared skill files (idempotent; no git pull or package installs)."
 platforms = ["linux", "macos"]
+
+# Run at every Herdr startup (and on live server handoff): idempotently restore
+# the sidebar token, keep-alive poller, PATH `todo`, and shared skill files,
+# then poll once. Safe to re-run; never fails the boot. For a full refresh run
+# the `update` action.
+[[startup]]
+command = ["node", "herdr-todo.mjs", "sync"]
 
 [[actions]]
 id = "setup"
 title = "Set up todo sidebar token + poller (backs up config)"
 command = ["node", "herdr-todo.mjs", "setup"]
+
+[[actions]]
+id = "sync"
+title = "Re-sync tokens, poller, PATH todo, and skill files (the startup hook; safe to re-run)"
+command = ["node", "herdr-todo.mjs", "sync"]
 
 [[actions]]
 id = "update"

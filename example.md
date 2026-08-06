@@ -15,8 +15,8 @@
 
 ### Planning
 
-- [ ] (A) Write the project plan @pi +planning
-- [ ] (B) Break the plan into feature buckets @pi +planning
+- [ ] (A) Write the project plan @planning +planning
+- [ ] (B) Break the plan into feature buckets @planning +planning
 
 ### Core
 

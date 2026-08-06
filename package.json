@@ -1,7 +1,7 @@
 {
   "name": "herdr-todo",
   "version": "0.1.0",
-  "description": "Portable TODOS.md/TODO.md todo tracking for coding agents — a Herdr sidebar count, a dedicated live todo tab per present todo file (TODO.md / TODOS.md each get their own), and per-agent /todo adapters (pi, OpenCode, Cline, Grok).",
+  "description": "Portable TODOS.md/TODO.md todo tracking for coding agents — a Herdr sidebar count, a dedicated live todo tab per present todo file (TODO.md / TODOS.md each get their own), and per-agent /todo adapters (pi, OpenCode, Cline, Grok, Kilo, Droid).",
   "license": "MIT",
   "type": "module",
   "bin": {

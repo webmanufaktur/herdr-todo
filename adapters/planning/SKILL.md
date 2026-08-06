@@ -1,22 +1,22 @@
 ---
 name: planning-todos
 description: >
-  Planning + todo workflow for this machine's pi agents (the prep layer before
-  execution). Write implementation plans to .plans/, drive all
+  Planning + todo workflow (the prep layer before execution) — agent-neutral.
+  Write implementation plans to .plans/, drive all
   TODOS.md/TODO.md changes through the `todo` engine (never hand-edit), and
   open ANY new agent surface as a NEW HERDR TAB — never a pane split; the live
   todo list lives in its own dedicated TAB per todo file (TODO.md / TODOS.md),
   staying open even with 0 open tasks. Use when
   planning a task, adding/completing/reopening todos, or handing work to
-  another agent (grok executes, glm plans).
+  another agent.
 metadata:
   short-description: "Plans in .plans/, todos via the engine, agents in new tabs"
 ---
 
 # Planning + Todos workflow
 
-Applies to every pi session on this machine (planner `zai/glm-5.2`, executor
-`xai/grok-4.5`; model routing lives in the `delegate-models` skill). Three rules:
+Agent-neutral: works the same in any coding agent that loads this skill
+(pi, opencode, cline, grok, kilo, droid, …). Three rules:
 
 1. **Plans → `.plans/`.** Implementation plans live at the repo root in
    `.plans/<slug>.md` (kebab-case slug, git-committed), shaped like
@@ -30,7 +30,7 @@ Applies to every pi session on this machine (planner `zai/glm-5.2`, executor
 
 - Planning a task, or writing/updating an implementation plan
 - Adding, completing, reopening, or listing todos
-- Handing work to another agent (grok execution, glm planning/review)
+- Handing work to another agent (e.g. another agent kind executes, this one plans/reviews)
 - Needing a second agent surface in Herdr
 
 ## Planning workflow
@@ -38,7 +38,7 @@ Applies to every pi session on this machine (planner `zai/glm-5.2`, executor
 1. Read the relevant code/docs first; root-cause before planning.
 2. Write `.plans/<slug>.md` (shape below).
 3. Add a tracking task that references the plan:
-   `todo add "(B) <subject> — see .plans/<slug>.md @pi +<section>"`
+   `todo add "(B) <subject> — see .plans/<slug>.md @<agent> +<section>"`
 4. Hand off to the executor in a NEW TAB (rule §5).
 
 ## Plan-file shape (`.plans/`)
@@ -102,8 +102,8 @@ Never leave an open checkbox with a `t:` stamp. Then restore the engine:
 - Keep the first tab for your interactive shell + your working agent tabs;
   never hardcode a pane or tab number (the layout is semantic).
 
-## Delegate routing
+## Delegation
 
-Planning/review → `zai/glm-5.2`; execution → `xai/grok-4.5`. See the
-`delegate-models` skill for the exact provider/model IDs and how to launch a
-session on the right model.
+Which agent plans vs. executes is up to you (any agent here can do either).
+When handing off, start the next agent in a new tab per the rule above and pass
+it the task text + the `.plans/<slug>.md` reference.
